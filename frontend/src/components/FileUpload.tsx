@@ -62,9 +62,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
         <div className="relative z-10 max-w-3xl">
           <div className="flex flex-wrap gap-2 items-center mb-3">
-            <div className="inline-flex items-center space-x-2 bg-blue-500/20 text-blue-200 px-3 py-1 rounded-full text-xs font-semibold border border-blue-400/30">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Motor Inteligente SLEP</span>
+            <div className="inline-flex items-center space-x-2 bg-amber-500/20 text-amber-200 px-3 py-1 rounded-full text-xs font-semibold border border-amber-400/30">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Dotación Uyuy!! 🤠</span>
             </div>
 
             <div className="inline-flex items-center space-x-2 bg-indigo-500/30 text-indigo-100 px-3 py-1 rounded-full text-xs font-semibold border border-indigo-400/40">
@@ -86,7 +86,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
-            Consolidación Automática de Dotación Docente
+            Dotación Uyuy!! • Consolidación Docente SLEP
           </h2>
           <p className="text-blue-100/90 text-sm leading-relaxed mb-4">
             Carga tus planillas de dotación escolar en formato <strong>.xlsx, .xls o .csv</strong>.

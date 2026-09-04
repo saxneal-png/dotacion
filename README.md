@@ -1,4 +1,4 @@
-﻿# 📊 Analizador de Dotación Docente SLEP
+# 🤠 Dotación Uyuy!! - Analizador de Dotación Docente SLEP
 
 Aplicación web profesional diseñada para los **Servicios Locales de Educación Pública (SLEP)**. Procesa de manera automatizada planillas de dotación escolar (.xlsx, .xls, .csv), interpreta funciones y cargos mediante un motor híbrido inteligente (**Reglas del Estatuto Docente Chileno + Google Gemini AI**), clasifica las horas pedagógicas en **Aula**, **Técnicas** y **Directivas**, y genera el informe consolidado oficial.
 

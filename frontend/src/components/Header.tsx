@@ -37,9 +37,9 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-extrabold text-slate-900 text-lg tracking-tight">SLEP Dotación AI</span>
-                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full font-semibold">
-                  v2.0
+                <span className="font-extrabold text-slate-900 text-lg tracking-tight">Dotación Uyuy!! 🤠</span>
+                <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-semibold border border-amber-300">
+                  SLEP
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium hidden sm:block">
