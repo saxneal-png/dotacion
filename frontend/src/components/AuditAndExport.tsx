@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Download, FileSpreadsheet, Printer, History, RefreshCw, FileText } from 'lucide-react';
-import type { AuditItem, SchoolSummary } from '../types';
+import type { AuditItem, SchoolSummary, TeacherRecord } from '../types';
 
 interface AuditAndExportProps {
   schools: SchoolSummary[];
+  teachers?: TeacherRecord[];
   onExportExcel: () => void;
   onExportCsv: () => void;
 }
 
 export const AuditAndExport: React.FC<AuditAndExportProps> = ({
   schools,
+  teachers = [],
   onExportExcel,
   onExportCsv,
 }) => {
@@ -20,20 +22,39 @@ export const AuditAndExport: React.FC<AuditAndExportProps> = ({
     setLoadingLogs(true);
     try {
       const res = await fetch('/api/audit-log?limit=100');
-      const data = await res.json();
-      if (data.audit_log) {
-        setAuditLogs(data.audit_log);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audit_log && data.audit_log.length > 0) {
+          setAuditLogs(data.audit_log);
+          return;
+        }
       }
-    } catch (e) {
-      console.error('Error fetching audit logs:', e);
+    } catch {
+      // Ignorar error si no hay backend
     } finally {
       setLoadingLogs(false);
+    }
+
+    // Fallback: usar docentes procesados en el navegador
+    if (teachers.length > 0) {
+      const synthesized: AuditItem[] = teachers.slice(0, 100).map((t, idx) => ({
+        id: idx + 1,
+        file_name: t.file_name || 'planilla.xlsx',
+        school_rbd: t.rbd,
+        teacher_name: t.teacher_name,
+        activity: t.activity,
+        hours: t.hours,
+        category: t.category,
+        source: t.source,
+        created_at: new Date().toLocaleTimeString(),
+      }));
+      setAuditLogs(synthesized);
     }
   };
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [teachers]);
 
   const handlePrint = () => {
     window.print();

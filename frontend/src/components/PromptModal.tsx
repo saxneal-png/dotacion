@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { X, Sparkles, RotateCcw, Save, Copy, Check } from 'lucide-react';
+import { DEFAULT_GEMINI_PROMPT } from '../services/classifier';
 
 interface PromptModalProps {
   isOpen: boolean;
@@ -26,13 +27,23 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   const fetchPrompt = async () => {
     setLoading(true);
     try {
+      const saved = localStorage.getItem('gemini_custom_prompt');
+      if (saved) {
+        setPrompt(saved);
+        setLoading(false);
+        return;
+      }
+
+      // Try fetching from backend if available
       const res = await fetch('/api/prompt');
       if (res.ok) {
         const data = await res.json();
         setPrompt(data.prompt);
+      } else {
+        setPrompt(DEFAULT_GEMINI_PROMPT);
       }
-    } catch (err: any) {
-      onNotify('Error al cargar el prompt: ' + err.message, 'error');
+    } catch {
+      setPrompt(DEFAULT_GEMINI_PROMPT);
     } finally {
       setLoading(false);
     }
@@ -41,18 +52,18 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      if (res.ok) {
-        onNotify('¡Prompt del sistema actualizado correctamente!');
-        onClose();
-      } else {
-        const err = await res.json();
-        throw new Error(err.detail || 'Error al guardar prompt');
-      }
+      localStorage.setItem('gemini_custom_prompt', prompt);
+
+      try {
+        await fetch('/api/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+      } catch {}
+
+      onNotify('¡Prompt del sistema actualizado correctamente!');
+      onClose();
     } catch (err: any) {
       onNotify(err.message, 'error');
     } finally {
@@ -63,12 +74,14 @@ export const PromptModal: React.FC<PromptModalProps> = ({
   const handleReset = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/prompt/reset', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setPrompt(data.prompt);
-        onNotify('Prompt restablecido a la versión oficial SLEP');
-      }
+      localStorage.removeItem('gemini_custom_prompt');
+      setPrompt(DEFAULT_GEMINI_PROMPT);
+
+      try {
+        await fetch('/api/prompt/reset', { method: 'POST' });
+      } catch {}
+
+      onNotify('Prompt restablecido a la versión oficial SLEP');
     } catch (err: any) {
       onNotify('Error al restablecer: ' + err.message, 'error');
     } finally {
@@ -80,46 +93,50 @@ export const PromptModal: React.FC<PromptModalProps> = ({
     navigator.clipboard.writeText(prompt);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    onNotify('Prompt copiado al portapapeles');
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-150">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 p-5 text-white flex justify-between items-center shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-lg bg-blue-600/50 flex items-center justify-center border border-blue-400/30">
-              <Sparkles className="w-5 h-5 text-amber-300" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center border border-amber-500/20">
+              <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base">Prompt del Sistema IA (Google Gemini 2.5)</h3>
-              <p className="text-xs text-blue-200">
-                Instrucciones oficiales para clasificar horas en Aula, Técnicas y Directivas
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                Prompt de Clasificación IA
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                  Transparencia Total
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500">
+                Este es el prompt que analiza tus planillas y clasifica las funciones en Aula, Técnica o Directiva.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-white/80 hover:text-white rounded-lg p-1 hover:bg-white/10 transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto space-y-4 flex-1">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-              Plantilla de Instrucciones Enviada a Gemini
-            </span>
+        {/* Modal Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>Puedes editar este prompt y tus cambios se guardarán automáticamente en tu navegador.</span>
             <button
               onClick={handleCopy}
-              className="inline-flex items-center space-x-1 text-xs text-blue-600 hover:text-blue-800 font-medium px-2.5 py-1 rounded-md hover:bg-blue-50 border border-blue-200 transition-colors"
+              className="inline-flex items-center space-x-1.5 text-blue-600 hover:text-blue-700 font-semibold cursor-pointer"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copiado al portapapeles' : 'Copiar Prompt'}</span>
+              <span>{copied ? '¡Copiado!' : 'Copiar prompt'}</span>
             </button>
           </div>
 
@@ -127,51 +144,40 @@ export const PromptModal: React.FC<PromptModalProps> = ({
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              disabled={loading}
+              disabled={loading || saving}
               rows={16}
-              className="w-full p-3.5 text-xs font-mono bg-slate-950 text-slate-100 rounded-xl border border-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 leading-relaxed resize-y"
-              placeholder="Cargando prompt del sistema..."
+              className="w-full font-mono text-xs text-slate-800 bg-slate-900/5 p-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all resize-none leading-relaxed"
+              placeholder="Cargando prompt..."
             />
-          </div>
-
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1.5">
-            <p className="font-bold text-slate-800">
-              💡 Parámetro dinámico: <code className="text-blue-600 bg-blue-50 px-1 py-0.5 rounded font-mono">{'{activities_json}'}</code>
-            </p>
-            <p>
-              El motor reemplaza automáticamente <code className="font-mono">{'{activities_json}'}</code> con el lote de actividades o funciones no reconocidas por el diccionario local. La IA analiza abreviaturas chilenas (ej: <em>coord pie</em>, <em>taller sep</em>) y retorna la clasificación estricta en formato JSON.
-            </p>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="bg-slate-100 px-6 py-4 flex justify-between items-center border-t border-slate-200 shrink-0">
+        {/* Modal Footer */}
+        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50/50">
           <button
-            type="button"
             onClick={handleReset}
-            disabled={saving || loading}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors disabled:opacity-50"
+            disabled={loading || saving}
+            className="inline-flex items-center space-x-2 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-slate-200/60 transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
+            <RotateCcw className="w-4 h-4" />
             <span>Restablecer Oficial SLEP</span>
           </button>
 
-          <div className="flex space-x-2">
+          <div className="flex items-center space-x-3">
             <button
-              type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+              disabled={saving}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-800 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              Cerrar
+              Cancelar
             </button>
             <button
-              type="button"
               onClick={handleSave}
-              disabled={saving || loading}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors disabled:opacity-50"
+              disabled={loading || saving}
+              className="inline-flex items-center space-x-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-sm transition-colors cursor-pointer"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>{saving ? 'Guardando...' : 'Guardar Cambios en Prompt'}</span>
+              <Save className="w-4 h-4" />
+              <span>{saving ? 'Guardando...' : 'Guardar y Aplicar'}</span>
             </button>
           </div>
         </div>

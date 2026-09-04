@@ -9,6 +9,8 @@ import { TeacherDetailTable } from './components/TeacherDetailTable';
 import { AuditAndExport } from './components/AuditAndExport';
 import type { SchoolSummary, TeacherRecord, KpiStats, ConsolidatedResponse, GeminiModel } from './types';
 import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { processDotacionFilesClient, recalculateSchoolTotals } from './services/dotacionProcessor';
+import { exportConsolidatedExcelBrowser, exportCsvBrowser } from './services/excelExporter';
 
 const FALLBACK_MODELS: GeminiModel[] = [
   {
@@ -109,20 +111,40 @@ export function App() {
   const [loading, setLoading] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  const [schools, setSchools] = useState<SchoolSummary[]>([]);
-  const [teachers, setTeachers] = useState<TeacherRecord[]>([]);
-  const [kpis, setKpis] = useState<KpiStats>({
-    total_schools: 0,
-    total_teachers: 0,
-    total_matricula: 0,
-    total_horas_general: 0,
-    total_horas_aula: 0,
-    total_horas_directivas: 0,
-    total_horas_tecnicas: 0,
-    pct_aula: 0,
-    pct_directivas: 0,
-    pct_tecnicas: 0,
-    discrepancies_count: 0,
+  const [schools, setSchools] = useState<SchoolSummary[]>(() => {
+    try {
+      const saved = localStorage.getItem('dotacion_schools');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [teachers, setTeachers] = useState<TeacherRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('dotacion_teachers');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [kpis, setKpis] = useState<KpiStats>(() => {
+    try {
+      const saved = localStorage.getItem('dotacion_kpis');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      total_schools: 0,
+      total_teachers: 0,
+      total_matricula: 0,
+      total_horas_general: 0,
+      total_horas_aula: 0,
+      total_horas_directivas: 0,
+      total_horas_tecnicas: 0,
+      pct_aula: 0,
+      pct_directivas: 0,
+      pct_tecnicas: 0,
+      discrepancies_count: 0,
+    };
   });
 
   const [selectedRbd, setSelectedRbd] = useState<string>('ALL');
@@ -153,18 +175,24 @@ export function App() {
 
   useEffect(() => {
     const fetchInitial = async () => {
-      try {
-        const res = await fetch('/api/consolidated');
-        if (res.ok) {
-          const data: ConsolidatedResponse = await res.json();
-          if (data.schools.length > 0) {
-            setSchools(data.schools);
-            setTeachers(data.teachers);
-            setKpis(data.kpis);
-            setActiveTab('consolidated');
+      // Intentar sincronizar con backend si está disponible y el cliente no tiene datos
+      if (schools.length === 0) {
+        try {
+          const res = await fetch('/api/consolidated');
+          if (res.ok) {
+            const data: ConsolidatedResponse = await res.json();
+            if (data.schools.length > 0) {
+              setSchools(data.schools);
+              setTeachers(data.teachers);
+              setKpis(data.kpis);
+              localStorage.setItem('dotacion_schools', JSON.stringify(data.schools));
+              localStorage.setItem('dotacion_teachers', JSON.stringify(data.teachers));
+              localStorage.setItem('dotacion_kpis', JSON.stringify(data.kpis));
+              setActiveTab('consolidated');
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
       try {
         const resModel = await fetch('/api/model');
@@ -176,18 +204,26 @@ export function App() {
         }
       } catch (e) {}
 
-      // If we have an API key, try mapping available models silently on load
-      if (apiKey && apiKey.length >= 10) {
+      // Si tenemos clave, mapear modelos silenciosamente
+      if (apiKey && apiKey.length >= 10 && models.length === FALLBACK_MODELS.length) {
         try {
-          const resModels = await fetch('/api/gemini-models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: apiKey }),
-          });
-          if (resModels.ok) {
-            const data = await resModels.json();
-            if (data.models && data.models.length > 0) {
-              handleUpdateModels(data.models);
+          const googleRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+          if (googleRes.ok) {
+            const gData = await googleRes.json();
+            if (gData.models && Array.isArray(gData.models)) {
+              const mapped = gData.models
+                .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+                .map((m: any) => {
+                  const id = m.name.replace('models/', '');
+                  return {
+                    id,
+                    display_name: m.displayName || id,
+                    description: m.description || 'Modelo Gemini',
+                    badge: id.includes('flash') ? 'Rápido' : id.includes('pro') ? 'Precisión' : undefined,
+                    is_recommended: id.includes('flash'),
+                  };
+                });
+              if (mapped.length > 0) handleUpdateModels(mapped);
             }
           }
         } catch (e) {}
@@ -198,30 +234,33 @@ export function App() {
 
   const handleProcessFiles = async (files: File[]) => {
     setLoading(true);
-    const formData = new FormData();
-    files.forEach((f) => formData.append('files', f));
-    if (apiKey) {
-      formData.append('gemini_api_key', apiKey);
-    }
-    if (selectedModel) {
-      formData.append('gemini_model', selectedModel);
-    }
-
     try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Error al procesar archivos');
-      }
-      const data: ConsolidatedResponse = await res.json();
-      setSchools(data.schools);
-      setTeachers(data.teachers);
-      setKpis(data.kpis);
+      const customPrompt = localStorage.getItem('gemini_custom_prompt') || undefined;
+
+      // 1. Procesamiento en el navegador (100% independiente, funciona en GitHub Pages)
+      const clientResult = await processDotacionFilesClient(files, apiKey, selectedModel, customPrompt);
+
+      setSchools(clientResult.schools);
+      setTeachers(clientResult.teachers);
+      setKpis(clientResult.kpis);
+
+      try {
+        localStorage.setItem('dotacion_schools', JSON.stringify(clientResult.schools));
+        localStorage.setItem('dotacion_teachers', JSON.stringify(clientResult.teachers));
+        localStorage.setItem('dotacion_kpis', JSON.stringify(clientResult.kpis));
+      } catch {}
+
+      // 2. Envío silencioso al backend si está disponible (para auditoría o persistencia en servidor local)
+      try {
+        const formData = new FormData();
+        files.forEach((f) => formData.append('files', f));
+        if (apiKey) formData.append('gemini_api_key', apiKey);
+        if (selectedModel) formData.append('gemini_model', selectedModel);
+        fetch('/api/upload', { method: 'POST', body: formData }).catch(() => {});
+      } catch {}
+
       setActiveTab('consolidated');
-      showToast(`¡Se procesaron exitosamente ${data.schools.length} establecimientos con modelo ${selectedModel}!`);
+      showToast(`¡Se procesaron exitosamente ${clientResult.schools.length} establecimientos en tu navegador!`);
     } catch (err: any) {
       showToast(err.message || 'Error al procesar los archivos.', 'error');
     } finally {
@@ -235,15 +274,32 @@ export function App() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/clear', { method: 'POST' });
-      if (res.ok) {
-        const data: ConsolidatedResponse = await res.json();
-        setSchools(data.schools);
-        setTeachers(data.teachers);
-        setKpis(data.kpis);
-        setActiveTab('upload');
-        showToast('Datos limpiados. Listo para un nuevo análisis.');
-      }
+      setSchools([]);
+      setTeachers([]);
+      setKpis({
+        total_schools: 0,
+        total_teachers: 0,
+        total_matricula: 0,
+        total_horas_general: 0,
+        total_horas_aula: 0,
+        total_horas_directivas: 0,
+        total_horas_tecnicas: 0,
+        pct_aula: 0,
+        pct_directivas: 0,
+        pct_tecnicas: 0,
+        discrepancies_count: 0,
+      });
+
+      localStorage.removeItem('dotacion_schools');
+      localStorage.removeItem('dotacion_teachers');
+      localStorage.removeItem('dotacion_kpis');
+
+      try {
+        await fetch('/api/clear', { method: 'POST' });
+      } catch {}
+
+      setActiveTab('upload');
+      showToast('Datos limpiados. Listo para un nuevo análisis.');
     } catch (err: any) {
       showToast('Error al limpiar datos: ' + err.message, 'error');
     } finally {
@@ -253,32 +309,60 @@ export function App() {
 
   const handleReclassify = async (teacherIndex: number, newCategory: string) => {
     try {
-      const res = await fetch('/api/reclassify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          teacher_index: teacherIndex,
-          new_category: newCategory,
-          reason: 'Ajuste manual de usuario',
-        }),
-      });
-      if (!res.ok) throw new Error('No se pudo actualizar la clasificación');
-      const data: ConsolidatedResponse = await res.json();
-      setSchools(data.schools);
-      setTeachers(data.teachers);
-      setKpis(data.kpis);
-      showToast('Actividad reclasificada y totales actualizados.');
+      const updated = [...teachers];
+      if (updated[teacherIndex]) {
+        updated[teacherIndex] = {
+          ...updated[teacherIndex],
+          category: newCategory as 'AULA' | 'TECNICA' | 'DIRECTIVA',
+          source: 'Ajuste Manual de Usuario',
+        };
+
+        const recalculated = recalculateSchoolTotals(updated, schools);
+        setTeachers(updated);
+        setSchools(recalculated.schools);
+        setKpis(recalculated.kpis);
+
+        try {
+          localStorage.setItem('dotacion_teachers', JSON.stringify(updated));
+          localStorage.setItem('dotacion_schools', JSON.stringify(recalculated.schools));
+          localStorage.setItem('dotacion_kpis', JSON.stringify(recalculated.kpis));
+        } catch {}
+
+        try {
+          fetch('/api/reclassify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              teacher_index: teacherIndex,
+              new_category: newCategory,
+              reason: 'Ajuste manual de usuario',
+            }),
+          }).catch(() => {});
+        } catch {}
+
+        showToast('Actividad reclasificada y totales actualizados.');
+      }
     } catch (err: any) {
       showToast(err.message, 'error');
     }
   };
 
   const handleExportExcel = () => {
-    window.location.href = '/api/export/excel';
+    if (schools.length === 0) {
+      showToast('No hay datos procesados para exportar.', 'error');
+      return;
+    }
+    exportConsolidatedExcelBrowser(schools, teachers);
+    showToast('¡Descarga de Excel consolidado completada!');
   };
 
   const handleExportCsv = () => {
-    window.location.href = '/api/export/csv';
+    if (schools.length === 0) {
+      showToast('No hay datos procesados para exportar.', 'error');
+      return;
+    }
+    exportCsvBrowser(schools);
+    showToast('¡Descarga de CSV completada!');
   };
 
   const handleSelectSchool = (rbd: string) => {
@@ -339,6 +423,7 @@ export function App() {
         {activeTab === 'audit' && (
           <AuditAndExport
             schools={schools}
+            teachers={teachers}
             onExportExcel={handleExportExcel}
             onExportCsv={handleExportCsv}
           />

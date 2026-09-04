@@ -56,30 +56,67 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
     try {
       if (key.length >= 10) {
-        const res = await fetch('/api/gemini-models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_key: key }),
-        });
-        const data = await res.json();
-        if (res.ok && data.models && data.models.length > 0) {
-          onUpdateModels(data.models);
-          setTestResult({
-            success: true,
-            message: `¡Mapeo exitoso! Se encontraron ${data.models.length} modelos autorizados por tu API Key. Elige el que prefieras a continuación.`,
+        // Intentar primero vía backend (si existe)
+        try {
+          const res = await fetch('/api/gemini-models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: key }),
           });
-          return;
-        } else if (!res.ok) {
-          throw new Error(data.detail || 'Error al consultar modelos con esta API Key.');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.models && data.models.length > 0) {
+              onUpdateModels(data.models);
+              setTestResult({
+                success: true,
+                message: `¡Mapeo exitoso! Se encontraron ${data.models.length} modelos autorizados por tu API Key. Elige el que prefieras a continuación.`,
+              });
+              return;
+            }
+          }
+        } catch {}
+
+        // Llamada directa desde el navegador a la API de Google Gemini (para GitHub Pages)
+        const googleRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        if (googleRes.ok) {
+          const gData = await googleRes.json();
+          if (gData.models && Array.isArray(gData.models)) {
+            const mappedModels: GeminiModel[] = gData.models
+              .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+              .map((m: any) => {
+                const id = m.name.replace('models/', '');
+                return {
+                  id,
+                  display_name: m.displayName || id,
+                  description: m.description || 'Modelo Gemini',
+                  badge: id.includes('flash') ? 'Rápido' : id.includes('pro') ? 'Precisión' : undefined,
+                  is_recommended: id.includes('flash'),
+                };
+              });
+
+            if (mappedModels.length > 0) {
+              onUpdateModels(mappedModels);
+              setTestResult({
+                success: true,
+                message: `¡Mapeo exitoso! Se encontraron ${mappedModels.length} modelos autorizados en Google AI Studio para tu clave.`,
+              });
+              return;
+            }
+          }
+        } else {
+          const errBody = await googleRes.json();
+          throw new Error(errBody.error?.message || 'Error al autenticar con Google Gemini.');
         }
       }
 
-      // If no key or short key, fetch defaults
-      const resDef = await fetch('/api/gemini-models/default');
-      if (resDef.ok) {
-        const data = await resDef.json();
-        if (data.models) onUpdateModels(data.models);
-      }
+      // Si no hay clave, cargar defaults
+      try {
+        const resDef = await fetch('/api/gemini-models/default');
+        if (resDef.ok) {
+          const data = await resDef.json();
+          if (data.models) onUpdateModels(data.models);
+        }
+      } catch {}
     } catch (err: any) {
       setTestResult({
         success: false,
@@ -99,34 +136,59 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     setTestResult(null);
 
     try {
-      const res = await fetch('/api/test-gemini-key', {
+      // 1. Intentar backend si existe
+      try {
+        const res = await fetch('/api/test-gemini-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            api_key: keyInput.trim(),
+            model: currentModel,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTestResult({
+            success: true,
+            message: `¡Conexión exitosa! El modelo "${data.model_tested || currentModel}" respondió correctamente y está listo para clasificar.`,
+            modelTested: data.model_tested,
+          });
+          if (data.models && data.models.length > 0) onUpdateModels(data.models);
+          if (data.model_tested) {
+            setCurrentModel(data.model_tested);
+            onSelectModel(data.model_tested);
+          }
+          onSaveKey(keyInput.trim());
+          return;
+        }
+      } catch {}
+
+      // 2. Probar directamente contra Google Gemini API (para GitHub Pages)
+      const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${keyInput.trim()}`;
+      const googleRes = await fetch(testUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          api_key: keyInput.trim(),
-          model: currentModel,
+          contents: [{ parts: [{ text: 'Responde exclusivamente: OK' }] }],
         }),
       });
-      const data = await res.json();
-      if (res.ok) {
+
+      if (googleRes.ok) {
         setTestResult({
           success: true,
-          message: `¡Conexión exitosa! El modelo "${data.model_tested || currentModel}" respondió correctamente y está listo para clasificar.`,
-          modelTested: data.model_tested,
+          message: `¡Conexión exitosa! El modelo "${currentModel}" está activo y autorizado por tu API Key.`,
+          modelTested: currentModel,
         });
-        if (data.models && data.models.length > 0) {
-          onUpdateModels(data.models);
-        }
-        if (data.model_tested) {
-          setCurrentModel(data.model_tested);
-          onSelectModel(data.model_tested);
-        }
         onSaveKey(keyInput.trim());
       } else {
-        setTestResult({ success: false, message: data.detail || 'Error al validar la clave o el modelo.' });
+        const errData = await googleRes.json();
+        setTestResult({
+          success: false,
+          message: errData.error?.message || `El modelo "${currentModel}" no respondió correctamente. Prueba con otro modelo como gemini-2.5-flash.`,
+        });
       }
     } catch (err: any) {
-      setTestResult({ success: false, message: 'No se pudo conectar al servidor: ' + err.message });
+      setTestResult({ success: false, message: 'Error de conexión: ' + err.message });
     } finally {
       setTesting(false);
     }

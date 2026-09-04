@@ -1,6 +1,16 @@
-# 🤠 Dotación Uyuy!! - Analizador de Dotación Docente SLEP
+﻿# 🤠 Dotación Uyuy!! - Analizador de Dotación Docente SLEP
 
-Aplicación web profesional diseñada para los **Servicios Locales de Educación Pública (SLEP)**. Procesa de manera automatizada planillas de dotación escolar (.xlsx, .xls, .csv), interpreta funciones y cargos mediante un motor híbrido inteligente (**Reglas del Estatuto Docente Chileno + Google Gemini AI**), clasifica las horas pedagógicas en **Aula**, **Técnicas** y **Directivas**, y genera el informe consolidado oficial.
+Aplicación web profesional diseñada para los **Servicios Locales de Educación Pública (SLEP)**. Procesa de manera automatizada planillas de dotación escolar (`.xlsx`, `.xls`, `.csv`), interpreta funciones y cargos mediante un motor híbrido inteligente (**Reglas del Estatuto Docente Chileno + Google Gemini AI**), clasifica las horas pedagógicas en **Aula**, **Técnicas** y **Directivas**, y genera el informe consolidado oficial.
+
+---
+
+## 🌐 Acceso Web Directo (Sin Instalar Nada)
+
+Tus colegas y directivos pueden trabajar directamente en la aplicación web sin necesidad de instalar programas ni clonar código:
+
+👉 **[https://saxneal-png.github.io/dotacion/](https://saxneal-png.github.io/dotacion/)**
+
+Todo el procesamiento de las planillas ocurre de forma privada y ultrarrápida en el propio navegador de cada usuario.
 
 ---
 
@@ -12,7 +22,7 @@ Genera con precisión matemática el consolidado ministerial en el formato ofici
 |:---:|:---|:---:|:---:|:---:|:---:|:---:|
 | 17822 | ESCUELA EJEMPLO SLEP | 345 | 184.0 | 44.0 | 142.0 | 370.0 |
 
-> **Control de Calidad Automático**: Valida que  + DIRECTIVA + TÉCNICA = TOTAL\ CONTRATO$. Si una planilla presenta descuadre en minutos u horas, el sistema lo resalta en rojo para auditoría inmediata.
+> **Control de Calidad Automático**: Valida que $AULA + DIRECTIVA + TÉCNICA = TOTAL\ CONTRATO$. Si una planilla presenta descuadre en minutos u horas, el sistema lo resalta en rojo para auditoría inmediata.
 
 ---
 
@@ -25,38 +35,10 @@ Cada usuario o colega debe utilizar su propia clave de API gratuita de Google Ge
    - Inicia sesión con tu cuenta de Google y haz clic en **"Create API Key"**.
    - Copia la clave generada.
 
-2. **Ingresar la clave en la aplicación**:
-   - **Opción A (Recomendada - Desde la Web)**: Al abrir la aplicación, haz clic en el botón con el ícono de llave dorada (**"API Key"**) en la barra superior. Pega tu clave y pulsa **"Mapear Modelos Disponibles"**. El sistema detectará automáticamente los modelos autorizados para tu cuenta (Gemini 3.8, 3.7, 3.6, 2.5 Flash, etc.).
-   - **Opción B (Archivo local)**: Renombra el archivo .env.example a .env y escribe tu clave:
-     `ash
-     GEMINI_API_KEY=tu_clave_aqui
-     `
-
----
-
-## 🚀 Instalación y Puesta en Marcha
-
-### Prerrequisitos
-- Python 3.10 o superior ([Descargar Python](https://www.python.org/downloads/))
-- Node.js 18+ (Opcional, solo necesario si deseas compilar el frontend desde cero)
-
-### 1. Clonar el Repositorio
-`ash
-git clone https://github.com/TU_USUARIO/TU_REPOSITORIO.git
-cd TU_REPOSITORIO
-`
-
-### 2. Instalar Dependencias de Python
-`ash
-pip install -r requirements.txt
-`
-
-### 3. Ejecutar la Aplicación (1 Clic)
-`ash
-python run_app.py
-`
-La aplicación se abrirá automáticamente en tu navegador web en:
-👉 **http://127.0.0.1:8080**
+2. **Ingresar la clave en la web**:
+   - Al abrir la página web, haz clic en el botón de la llave dorada (**"API Key"**) en la barra superior.
+   - Pega tu clave y pulsa **"Mapear Modelos Disponibles"**. El sistema detectará automáticamente los modelos autorizados para tu cuenta (Gemini 3.8, 3.7, 3.6, 2.5 Flash, etc.).
+   - Tu clave se guarda exclusivamente en tu navegador (`localStorage`), de forma privada y segura.
 
 ---
 
@@ -86,29 +68,24 @@ El motor clasifica cada función bajo las directrices estrictas del sistema educ
 
 ## 💡 Transparencia y Control del Prompt de IA
 
-En la esquina superior derecha encontrarás el botón **</> Prompt de IA**:
+En la esquina superior derecha encontrarás el botón **`</> Prompt de IA`**:
 - Permite **inspeccionar el texto exacto** que se le envía a Gemini.
 - Permite **editarlo y personalizarlo** según las necesidades de tu Servicio Local.
 - Incluye un botón para **restablecer** al prompt oficial ministerial con 1 clic.
 
 ---
 
-## 📄 Tratamiento de Formatos Horarios (h:mm, [h]:mm)
+## 📄 Tratamiento de Formatos Horarios (`h:mm`, `[h]:mm`)
 
-La aplicación detecta y procesa de forma nativa celdas en formato horario (como 1:34, 6:26, 12:00 o [40]:00), convirtiéndolas a decimales cronológicos exactos ( + 6:26 = 8.00\text{h}$) sin pérdidas ni errores de redondeo.
-
----
-
-## 📦 Exportación de Informes
-
-- **Excel Oficial (.xlsx)**: Genera el libro consolidado con fórmulas nativas de suma (=SUM(...)), estilos institucionales y pestaña de auditoría detallada docente por docente.
-- **CSV**: Para integración con otros sistemas o bases de datos relacionales.
-- **PDF**: Vista imprimible para comités y jefaturas de gestión de personas.
+La aplicación detecta y procesa de forma nativa celdas en formato horario (como `1:34`, `6:26`, `12:00` o `[40]:00`), convirtiéndolas a decimales cronológicos exactos ($1:34 + 6:26 = 8.00\text{h}$) sin pérdidas ni errores de redondeo.
 
 ---
 
-## 🛠️ Tecnologías Utilizadas
+## 💻 Ejecución Local Opcional (Para desarrolladores)
 
-- **Backend**: FastAPI, Python, Pandas, OpenPyXL, SQLite3, Google GenAI SDK.
-- **Frontend**: React 19, TypeScript, Tailwind CSS v4, Lucide Icons, Vite.
-- **IA**: Google Gemini (Familias 3.8, 3.7, 3.6, 2.5, 2.0 y 1.5).
+Si deseas ejecutar la aplicación en tu propia máquina con Python:
+```bash
+pip install -r requirements.txt
+python run_app.py
+```
+Abrirá automáticamente la aplicación en `http://127.0.0.1:8080`.
