@@ -293,6 +293,7 @@ export function App() {
       localStorage.removeItem('dotacion_schools');
       localStorage.removeItem('dotacion_teachers');
       localStorage.removeItem('dotacion_kpis');
+      localStorage.removeItem('dotacion_classification_cache');
 
       try {
         await fetch('/api/clear', { method: 'POST' });
@@ -305,6 +306,12 @@ export function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClearCache = () => {
+    localStorage.removeItem('dotacion_classification_cache');
+    localStorage.removeItem('gemini_custom_prompt');
+    showToast('Caché de IA borrada. Las actividades serán reclasificadas en el próximo análisis.');
   };
 
   const handleReclassify = async (teacherIndex: number, newCategory: string) => {
@@ -387,6 +394,7 @@ export function App() {
         openKeyModal={() => setIsKeyModalOpen(true)}
         openPromptModal={() => setIsPromptModalOpen(true)}
         onClearData={handleClearData}
+        onClearCache={handleClearCache}
         schoolsCount={schools.length}
       />
 

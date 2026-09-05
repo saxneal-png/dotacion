@@ -1,5 +1,5 @@
 import React from 'react';
-import { Key, CheckCircle, Sparkles, FileSpreadsheet, Layers, Users, ShieldCheck, Code, Trash2, Cpu } from 'lucide-react';
+import { Key, CheckCircle, Sparkles, FileSpreadsheet, Layers, Users, ShieldCheck, Code, Trash2, Cpu, DatabaseZap } from 'lucide-react';
 import type { GeminiModel } from '../types';
 
 interface HeaderProps {
@@ -12,6 +12,7 @@ interface HeaderProps {
   openKeyModal: () => void;
   openPromptModal: () => void;
   onClearData: () => void;
+  onClearCache: () => void;
   schoolsCount: number;
 }
 
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   openKeyModal,
   openPromptModal,
   onClearData,
+  onClearCache,
   schoolsCount,
 }) => {
   return (
@@ -93,6 +95,16 @@ export const Header: React.FC<HeaderProps> = ({
               ) : (
                 <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
               )}
+            </button>
+
+            {/* Clear Cache Button - always visible */}
+            <button
+              onClick={onClearCache}
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-50 border border-amber-300 transition-colors"
+              title="Borrar caché de clasificación IA (las actividades volverán a clasificarse)"
+            >
+              <DatabaseZap className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Borrar Caché</span>
             </button>
 
             {/* Clear Data Button */}
