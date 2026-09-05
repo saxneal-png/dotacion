@@ -8,6 +8,7 @@ interface TeacherDetailTableProps {
   selectedRbd: string;
   onSelectRbd: (rbd: string) => void;
   onReclassify: (teacherIndex: number, newCategory: string) => Promise<void>;
+  onBulkReclassify?: (indices: number[], newCategory: 'AULA' | 'TECNICA' | 'DIRECTIVA') => Promise<void>;
 }
 
 export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
@@ -16,12 +17,15 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
   selectedRbd,
   onSelectRbd,
   onReclassify,
+  onBulkReclassify,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+
+  const getRowKey = (t: TeacherRecord): string => t.id || String(teachers.indexOf(t));
 
   const filteredTeachers = teachers.filter((t) => {
     if (selectedRbd && selectedRbd !== 'ALL' && t.rbd !== selectedRbd) return false;
@@ -35,7 +39,7 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
     await onReclassify(originalIdx, newCat);
   };
 
-  const allFilteredIds = filteredTeachers.map((t, idx) => t.id || String(idx));
+  const allFilteredIds = filteredTeachers.map((t) => getRowKey(t));
   const allSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.has(id));
   const someSelected = allFilteredIds.some((id) => selectedIds.has(id));
 
@@ -55,21 +59,26 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
     });
   };
 
-  const handleBulkReclassify = async (newCategory: string) => {
+  const handleBulkReclassify = async (newCategory: 'AULA' | 'TECNICA' | 'DIRECTIVA') => {
     setBulkLoading(true);
     try {
-      const tasks: Array<{ originalIndex: number }> = [];
-      filteredTeachers.forEach((t, idx) => {
-        const id = t.id || String(idx);
+      const indicesToUpdate: number[] = [];
+      filteredTeachers.forEach((t) => {
+        const id = getRowKey(t);
         if (selectedIds.has(id)) {
-          // Use object reference to reliably find the original index
-          // (findIndex by id fails when multiple teachers have undefined ids)
           const originalIndex = teachers.indexOf(t);
-          if (originalIndex >= 0) tasks.push({ originalIndex });
+          if (originalIndex >= 0) indicesToUpdate.push(originalIndex);
         }
       });
-      for (const task of tasks) {
-        await onReclassify(task.originalIndex, newCategory);
+
+      if (indicesToUpdate.length > 0) {
+        if (onBulkReclassify) {
+          await onBulkReclassify(indicesToUpdate, newCategory);
+        } else {
+          for (const idx of indicesToUpdate) {
+            await onReclassify(idx, newCategory);
+          }
+        }
       }
       setSelectedIds(new Set());
     } finally {
@@ -145,12 +154,12 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredTeachers.map((t, idx) => {
-              const rowId = t.id || String(idx);
+              const rowId = getRowKey(t);
               const originalIndex = teachers.indexOf(t);
               const isEditing = editingIndex === originalIndex;
               const isSelected = selectedIds.has(rowId);
               return (
-                <tr key={t.id || idx} className={`transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-slate-50/80'}`} onClick={() => toggleSelectRow(rowId)}>
+                <tr key={rowId} className={`transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : 'hover:bg-slate-50/80'}`} onClick={() => toggleSelectRow(rowId)}>
                   <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => toggleSelectRow(rowId)} className={`flex items-center justify-center transition-colors ${isSelected ? 'text-indigo-600' : 'text-slate-300 hover:text-slate-500'}`}>
                       {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}

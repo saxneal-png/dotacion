@@ -372,6 +372,42 @@ export function App() {
     }
   };
 
+  const handleBulkReclassify = async (indices: number[], newCategory: 'AULA' | 'TECNICA' | 'DIRECTIVA') => {
+    try {
+      if (indices.length === 0) return;
+      const updated = [...teachers];
+      let modifiedCount = 0;
+
+      indices.forEach((teacherIndex) => {
+        if (updated[teacherIndex]) {
+          updated[teacherIndex] = {
+            ...updated[teacherIndex],
+            category: newCategory,
+            source: 'Ajuste Manual de Usuario (Lote)',
+          };
+          modifiedCount++;
+        }
+      });
+
+      if (modifiedCount === 0) return;
+
+      const recalculated = recalculateSchoolTotals(updated, schools);
+      setTeachers(updated);
+      setSchools(recalculated.schools);
+      setKpis(recalculated.kpis);
+
+      try {
+        localStorage.setItem('dotacion_teachers', JSON.stringify(updated));
+        localStorage.setItem('dotacion_schools', JSON.stringify(recalculated.schools));
+        localStorage.setItem('dotacion_kpis', JSON.stringify(recalculated.kpis));
+      } catch {}
+
+      showToast(`Se reclasificaron ${modifiedCount} registros a ${newCategory} exitosamente.`);
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
   const handleExportExcel = () => {
     if (schools.length === 0) {
       showToast('No hay datos procesados para exportar.', 'error');
@@ -443,6 +479,7 @@ export function App() {
             selectedRbd={selectedRbd}
             onSelectRbd={setSelectedRbd}
             onReclassify={handleReclassify}
+            onBulkReclassify={handleBulkReclassify}
           />
         )}
 
