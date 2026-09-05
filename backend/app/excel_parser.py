@@ -15,6 +15,7 @@ def is_rut(val: Any) -> bool:
     Validates if a string looks like a Chilean RUN/RUT:
     - 12.345.678-9, 12345678-9, 12345678-k
     - 16,496,711-5 (common comma formatting in Excel)
+    - 16.735.997 - 3 (spaces around hyphen)
     - 12345678k, 12.345.678k
     - Numeric integer of 7 to 9 digits (common in Excel RUN columns)
     """
@@ -27,6 +28,22 @@ def is_rut(val: Any) -> bool:
     if re.search(r"\b\d{7,8}[-‐]?[kK]\b", s_clean):
         return True
     if re.fullmatch(r"\d{7,9}", s_clean):
+        return True
+    return False
+
+def is_block_summary_label(s: str) -> bool:
+    """
+    Identifies block summary / header rows like:
+    'Sub General 30 h Plan de Estudios', 'SEP 10 h Plan de Estudios', 'PIE: 14 h'
+    which summarize child activities and must not be counted as an additional activity.
+    """
+    s_clean = s.strip().lower()
+    if not s_clean:
+        return False
+    if re.search(r"^(sub\s*general|subvenci[oó]n|plan\s*de\s*estudios?|horas?\s*plan|sep\b|pie\b|resumen\s*bloque|bloque)\b", s_clean):
+        if re.search(r"\d+\s*h", s_clean) or "plan de estudio" in s_clean:
+            return True
+    if re.search(r"\b(sub\s*general|sub\s*sep|sub\s*pie|sep|pie)\s*[:\s]*\d+\s*h", s_clean):
         return True
     return False
 
@@ -163,6 +180,15 @@ def parse_hours_cell(val: Any) -> float:
         m = float(time_match.group(2)) if time_match.group(2) else 0.0
         s = float(time_match.group(3)) if time_match.group(3) else 0.0
         total_h = h + m / 60.0 + s / 3600.0
+        if 0 < total_h <= 50:
+            return round(total_h, 2)
+
+    # Check Nh Mm format (e.g. "19h 30 m", "19h 30m", "19 h 30 min", "0h 45m", "19 hrs 30 min")
+    hm_match = re.search(r"(\d+)\s*h(?:rs?|oras?)?\s*(\d+)\s*m(?:in(?:utos?)?)?", val_str, re.IGNORECASE)
+    if hm_match:
+        h = float(hm_match.group(1))
+        m = float(hm_match.group(2))
+        total_h = h + m / 60.0
         if 0 < total_h <= 50:
             return round(total_h, 2)
 
@@ -337,7 +363,7 @@ class SchoolDataExtractor:
     def _extract_teachers(self, df: pd.DataFrame, header_idx: int):
         headers_row1 = [clean_str(df.iat[header_idx, c]).strip().lower() for c in range(df.shape[1])]
         
-        # Check for two-tier / merged subheaders (e.g. Row 4: TOTAL HC, Row 5: Sub. Gral | Sub. SEP | Sub. PIE)
+        # Check for two-tier / merged subheaders
         has_sub_header = False
         headers_row2 = []
         if header_idx + 1 < len(df):
@@ -370,6 +396,7 @@ class SchoolDataExtractor:
         col_total_hc = -1
         col_actividad = -1
         col_horas_simple = -1
+        col_obs = -1
 
         for idx, h in enumerate(headers):
             if not h:
@@ -384,23 +411,27 @@ class SchoolDataExtractor:
                 "horas semanales", "total carga horaria"
             ]):
                 col_contrato = idx
-            elif col_total_ha == -1 and ("total ha" in h or "horas aula" in h):
+            elif col_total_ha == -1 and ("total ha" in h or "horas aula" in h or "total h aula" in h):
                 col_total_ha = idx
-            elif col_sub_gral == -1 and (("total hc" in h and "gral" in h) or "hc sub. gral" in h or "hc sub gral" in h or (("sub. gral" in h or "sub gral" in h) and "titular" not in h and "contrata" not in h)):
+            elif col_sub_gral == -1 and (("hc" in h or "total" in h) and ("gral" in h or "general" in h) and not any(k in h for k in ["titular", "contrata", "indefinid", "plazo"])):
                 col_sub_gral = idx
-            elif col_sub_sep == -1 and (("total hc" in h and "sep" in h) or "hc sub. sep" in h or "hc sub sep" in h or (("sub. sep" in h or "sub sep" in h) and "titular" not in h and "contrata" not in h)):
+            elif col_sub_sep == -1 and (("hc" in h or "total" in h) and "sep" in h and not any(k in h for k in ["titular", "contrata", "indefinid", "plazo"])):
                 col_sub_sep = idx
-            elif col_sub_pie == -1 and (("total hc" in h and "pie" in h) or "hc sub. pie" in h or "hc sub pie" in h or (("sub. pie" in h or "sub pie" in h) and "titular" not in h and "contrata" not in h)):
+            elif col_sub_pie == -1 and (("hc" in h or "total" in h) and "pie" in h and not any(k in h for k in ["titular", "contrata", "indefinid", "plazo"])):
                 col_sub_pie = idx
-            elif col_total_hc == -1 and (h == "total hc" or "total hc" in h or "total cronologicas" in h or "total cronológicas" in h or "horas cronologicas" in h or "horas cronológicas" in h):
+            elif col_total_hc == -1 and ((h == "total hc" or h == "total hc*" or h == "total hc**") or (("total" in h and "hc" in h) and not any(k in h for k in ["gral", "sep", "pie", "ha", "curso"])) or "total cronologicas" in h or "total cronológicas" in h):
                 col_total_hc = idx
             elif col_actividad == -1 and any(k in h for k in ["asignatura", "cargo", "funcion", "función", "actividad", "rol", "especialidad", "materia", "descripcion", "descripción"]):
                 col_actividad = idx
             elif col_horas_simple == -1 and any(k in h for k in ["horas asignadas", "horas lectivas", "jornada", "horas", "hora", "hrs"]):
                 col_horas_simple = idx
+            elif col_obs == -1 and any(k in h for k in ["observac", "comentarios", "detalle"]):
+                col_obs = idx
 
         if col_nombres == -1:
             col_nombres = 0
+
+        teachers_by_key: Dict[str, Dict[str, Any]] = {}
 
         # CASE 1: Flat / Standard spreadsheet (explicit activity column)
         if col_actividad != -1 and (col_horas_simple != -1 or col_contrato != -1 or col_total_hc != -1):
@@ -433,139 +464,192 @@ class SchoolDataExtractor:
                 elif tot_hc > 0:
                     current_contract = tot_hc
 
-                act_h = h_simple if h_simple > 0 else (tot_hc if tot_hc > 0 else contrato_num)
-                
-                # Never omit a teacher: fallback activity if blank
                 clean_tname, role_in_name = extract_role_from_name(current_teacher)
-                final_act = act_raw or role_in_name or "Docencia de Aula"
+                t_key = current_rut or clean_tname
+                if not t_key:
+                    continue
 
-                if current_teacher and (act_h > 0 or current_contract > 0):
-                    effective_h = act_h if act_h > 0 else current_contract
-                    self.teachers_data.append({
-                        "teacher_name": clean_tname,
+                if t_key not in teachers_by_key:
+                    teachers_by_key[t_key] = {
+                        "name": clean_tname,
                         "rut": current_rut,
-                        "activity": final_act,
-                        "hours": round(effective_h, 2),
-                        "total_declared": current_contract or effective_h
-                    })
-            return
+                        "contract": current_contract,
+                        "activities": [],
+                        "seen_count": 1
+                    }
+                else:
+                    teachers_by_key[t_key]["seen_count"] += 1
+                    if current_contract > teachers_by_key[t_key]["contract"]:
+                        teachers_by_key[t_key]["contract"] = current_contract
 
-        # CASE 2: SLEP Hierarchical spreadsheet (activities in sub-rows under col_nombres)
-        r = data_start_idx
-        current_section = ""
+                act_h = h_simple if h_simple > 0 else (tot_hc if tot_hc > 0 else contrato_num)
+                final_act = act_raw or role_in_name or "Docencia de Aula"
+                if act_h > 0:
+                    teachers_by_key[t_key]["activities"].append({"name": final_act, "hours": act_h})
 
-        while r < len(df):
-            c1 = clean_str(df.iat[r, col_nombres])
-            c2 = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+        else:
+            # CASE 2: SLEP Hierarchical spreadsheet (activities in sub-rows under col_nombres)
+            r = data_start_idx
+            current_section = ""
 
-            # Check section headers
-            if not c2 and c1 and any(k in c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(c1):
-                current_section = c1.upper()
-                r += 1
-                continue
+            while r < len(df):
+                c1 = clean_str(df.iat[r, col_nombres])
+                c2 = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+                obs = clean_str(df.iat[r, col_obs]) if col_obs != -1 and col_obs < df.shape[1] else ""
 
-            if is_summary_or_total_label(c1):
-                r += 1
-                continue
+                # Check section headers
+                if not c2 and c1 and any(k in c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(c1):
+                    current_section = c1.upper()
+                    r += 1
+                    continue
 
-            has_run = is_rut(c2) if col_run != -1 else False
-            contrato_num = parse_hours_cell(df.iat[r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
-            
-            # Check any hours in master row
-            h_gral_master = parse_hours_cell(df.iat[r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
-            h_sep_master = parse_hours_cell(df.iat[r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
-            h_pie_master = parse_hours_cell(df.iat[r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
-            tot_hc_master = parse_hours_cell(df.iat[r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
-            any_master_h = (contrato_num > 0 or h_gral_master > 0 or h_sep_master > 0 or h_pie_master > 0 or tot_hc_master > 0)
+                if is_summary_or_total_label(c1):
+                    r += 1
+                    continue
 
-            is_valid_teacher = has_run or (looks_like_teacher_name(c1) and (any_master_h or c1 != ""))
-            if not is_valid_teacher:
-                r += 1
-                continue
+                has_run = is_rut(c2) if col_run != -1 else False
+                contrato_num = parse_hours_cell(df.iat[r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
+                
+                # Check master row hours
+                h_gral_master = parse_hours_cell(df.iat[r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
+                h_sep_master = parse_hours_cell(df.iat[r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
+                h_pie_master = parse_hours_cell(df.iat[r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
+                tot_hc_master = parse_hours_cell(df.iat[r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
+                tot_ha_master = parse_hours_cell(df.iat[r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
+                any_master_h = (contrato_num > 0 or h_gral_master > 0 or h_sep_master > 0 or h_pie_master > 0 or tot_hc_master > 0 or tot_ha_master > 0)
 
-            teacher_name_full = c1
-            teacher_name, role_in_name = extract_role_from_name(teacher_name_full)
-            teacher_rut = c2.replace(",", ".").replace(" ", "") if c2 else ""
+                is_valid_teacher = has_run or (looks_like_teacher_name(c1) and (any_master_h or c1 != ""))
+                if not is_valid_teacher:
+                    r += 1
+                    continue
 
-            # Look ahead for sub-rows (activities)
-            sub_rows = []
-            sub_r = r + 1
-            while sub_r < len(df):
-                sub_c1 = clean_str(df.iat[sub_r, col_nombres])
-                sub_c2 = clean_str(df.iat[sub_r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+                teacher_name_full = c1
+                clean_tname, role_in_name = extract_role_from_name(teacher_name_full)
+                clean_rut = c2.replace(",", ".").replace(" ", "") if c2 else ""
+                t_key = clean_rut or clean_tname
+                if not t_key:
+                    r += 1
+                    continue
 
-                # Stop if next row is a new teacher with RUN
-                if col_run != -1 and is_rut(sub_c2):
-                    break
-                # Stop if next row is a new teacher by name and has contract/hours
-                sub_contrato = parse_hours_cell(df.iat[sub_r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
-                if looks_like_teacher_name(sub_c1) and sub_contrato > 0:
-                    break
-                # Stop if section header
-                if not sub_c2 and sub_c1 and any(k in sub_c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(sub_c1):
-                    break
-                # Stop if summary row (do NOT add as activity)
-                if is_summary_or_total_label(sub_c1):
+                # Look ahead for sub-rows (activities)
+                sub_rows = []
+                sub_r = r + 1
+                while sub_r < len(df):
+                    sub_c1 = clean_str(df.iat[sub_r, col_nombres])
+                    sub_c2 = clean_str(df.iat[sub_r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+
+                    # Stop if next row is a new teacher with RUN
+                    if col_run != -1 and is_rut(sub_c2):
+                        break
+                    # Stop if next row is a new teacher by name and has contract/hours
+                    sub_contrato = parse_hours_cell(df.iat[sub_r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
+                    if looks_like_teacher_name(sub_c1) and sub_contrato > 0:
+                        break
+                    # Stop if section header
+                    if not sub_c2 and sub_c1 and any(k in sub_c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(sub_c1):
+                        break
+                    # Stop if summary row
+                    if is_summary_or_total_label(sub_c1):
+                        sub_r += 1
+                        break
+
+                    if sub_c1:
+                        is_block = is_block_summary_label(sub_c1)
+                        h_gral = parse_hours_cell(df.iat[sub_r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
+                        h_sep = parse_hours_cell(df.iat[sub_r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
+                        h_pie = parse_hours_cell(df.iat[sub_r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
+                        tot_hc = parse_hours_cell(df.iat[sub_r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
+                        tot_ha = parse_hours_cell(df.iat[sub_r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
+
+                        h = h_gral + h_sep + h_pie
+                        if h == 0.0 and tot_hc > 0.0:
+                            h = tot_hc
+                        if h == 0.0 and tot_ha > 0.0:
+                            h = tot_ha * 45.0 / 60.0
+
+                        if h > 0:
+                            sub_rows.append({"name": sub_c1, "hours": round(h, 2), "is_block": is_block})
+
                     sub_r += 1
-                    break
 
-                if sub_c1:
-                    h_gral = parse_hours_cell(df.iat[sub_r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
-                    h_sep = parse_hours_cell(df.iat[sub_r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
-                    h_pie = parse_hours_cell(df.iat[sub_r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
-                    tot_hc = parse_hours_cell(df.iat[sub_r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
-                    tot_ha = parse_hours_cell(df.iat[sub_r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
+                if t_key not in teachers_by_key:
+                    teachers_by_key[t_key] = {
+                        "name": clean_tname,
+                        "rut": clean_rut,
+                        "contract": contrato_num,
+                        "activities": [],
+                        "seen_count": 1
+                    }
+                else:
+                    teachers_by_key[t_key]["seen_count"] += 1
+                    if contrato_num > teachers_by_key[t_key]["contract"]:
+                        teachers_by_key[t_key]["contract"] = contrato_num
 
-                    h = h_gral + h_sep + h_pie
-                    if h == 0.0 and tot_hc > 0.0:
-                        h = tot_hc
-                    if h == 0.0 and tot_ha > 0.0:
-                        h = tot_ha * 45.0 / 60.0
+                t_entry = teachers_by_key[t_key]
 
-                    if h > 0:
-                        sub_rows.append((sub_c1, round(h, 2)))
+                # Filter block summaries: if child activities exist, exclude block headers to avoid double counting
+                non_block_items = [item for item in sub_rows if not item["is_block"]]
+                valid_items = non_block_items if len(non_block_items) > 0 else sub_rows
 
-                sub_r += 1
+                if valid_items:
+                    for item in valid_items:
+                        t_entry["activities"].append({"name": item["name"], "hours": item["hours"]})
+                else:
+                    master_h = h_gral_master + h_sep_master + h_pie_master
+                    if master_h == 0.0 and tot_hc_master > 0.0:
+                        master_h = tot_hc_master
+                    if master_h == 0.0 and tot_ha_master > 0.0:
+                        master_h = tot_ha_master * 45.0 / 60.0
 
-            if sub_rows:
-                for act_name, act_h in sub_rows:
-                    self.teachers_data.append({
-                        "teacher_name": teacher_name,
-                        "rut": teacher_rut,
-                        "activity": act_name,
-                        "hours": act_h,
-                        "total_declared": contrato_num or act_h
-                    })
-            else:
-                act_name = role_in_name
-                if not act_name:
-                    if "PIE" in current_section or (col_sub_pie != -1 and col_sub_pie < df.shape[1] and parse_hours_cell(df.iat[r, col_sub_pie]) > 0):
-                        act_name = "Docente PIE"
-                    elif "CO DOCENTE" in current_section:
-                        act_name = "Co-docente"
+                    # Deduplication for multi-row teachers:
+                    if t_entry["seen_count"] > 1 and master_h == 0.0:
+                        pass # Repeated course breakdown row with 0 new hours
+                    elif t_entry["seen_count"] > 1 and len(t_entry["activities"]) > 0 and master_h == t_entry["contract"]:
+                        pass # Repeated contract total row
                     else:
-                        act_name = "Docencia de Aula"
+                        act_name = role_in_name
+                        if not act_name:
+                            if "PIE" in current_section or (h_pie_master > 0):
+                                act_name = "Docente PIE"
+                            elif "CO DOCENTE" in current_section:
+                                act_name = "Co-docente"
+                            elif obs:
+                                act_name = obs
+                            else:
+                                act_name = "Docencia de Aula"
 
-                h_row = contrato_num
-                if h_row == 0.0:
-                    h_gral = parse_hours_cell(df.iat[r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
-                    h_sep = parse_hours_cell(df.iat[r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
-                    h_pie = parse_hours_cell(df.iat[r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
-                    h_row = h_gral + h_sep + h_pie
-                    if h_row == 0.0 and col_total_hc != -1 and col_total_hc < df.shape[1]:
-                        h_row = parse_hours_cell(df.iat[r, col_total_hc])
+                        eff_h = master_h if master_h > 0 else contrato_num
+                        if eff_h > 0:
+                            t_entry["activities"].append({"name": act_name, "hours": round(eff_h, 2)})
 
-                if h_row > 0 or contrato_num > 0:
-                    effective_h = h_row if h_row > 0 else contrato_num
-                    self.teachers_data.append({
-                        "teacher_name": teacher_name,
-                        "rut": teacher_rut,
-                        "activity": act_name,
-                        "hours": round(effective_h, 2),
-                        "total_declared": contrato_num or effective_h
-                    })
+                r = sub_r
 
-            r = sub_r
+        # Consolidate teachers and audit the legal 44h limit (Art. 80 Estatuto Docente)
+        for t_key, t_data in teachers_by_key.items():
+            tot_h = sum(a["hours"] for a in t_data["activities"])
+            decl = t_data["contract"] or tot_h
+            if not t_data["activities"] and decl > 0:
+                t_data["activities"].append({"name": "Docencia de Aula", "hours": decl})
+                tot_h = decl
+
+            is_over_44 = (round(tot_h, 2) > 44.0 or round(decl, 2) > 44.0)
+            warn = ""
+            if is_over_44:
+                max_val = max(tot_h, decl)
+                diff = round(max_val - 44.0, 2)
+                warn = f"⚠️ Supera el tope legal de 44 hrs semanales: registra {max_val:.1f} hrs (+{diff:.1f} hrs de sobrecarga). Posible error de cálculo del establecimiento."
+
+            for act in t_data["activities"]:
+                self.teachers_data.append({
+                    "teacher_name": t_data["name"],
+                    "rut": t_data["rut"],
+                    "activity": act["name"],
+                    "hours": act["hours"],
+                    "total_declared": decl,
+                    "total_teacher_hours": round(tot_h, 2),
+                    "is_over_legal_limit": is_over_44,
+                    "legal_limit_warning": warn
+                })
 
 def parse_excel_file(file_input: Union[str, bytes, io.BytesIO], filename: str) -> Dict[str, Any]:
     extractor = SchoolDataExtractor(file_input, filename)

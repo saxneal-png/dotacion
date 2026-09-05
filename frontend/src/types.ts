@@ -7,6 +7,7 @@ export interface SchoolSummary {
   horas_tecnicas: number;
   total_horas_ee: number;
   teachers_count: number;
+  over_44_count?: number;
   has_discrepancy: boolean;
   discrepancy_note?: string;
   source_file: string;
@@ -24,6 +25,9 @@ export interface TeacherRecord {
   category: "AULA" | "TECNICA" | "DIRECTIVA";
   source: string;
   total_declared?: number;
+  total_teacher_hours?: number;
+  is_over_legal_limit?: boolean;
+  legal_limit_warning?: string;
 }
 
 export interface KpiStats {
@@ -38,6 +42,7 @@ export interface KpiStats {
   pct_directivas: number;
   pct_tecnicas: number;
   discrepancies_count: number;
+  teachers_over_44_count?: number;
 }
 
 export interface AuditItem {

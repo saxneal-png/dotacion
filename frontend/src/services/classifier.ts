@@ -1,4 +1,4 @@
-﻿export const DEFAULT_GEMINI_PROMPT = `Eres un analista experto en dotación docente del sistema educacional público chileno (SLEP - Servicios Locales de Educación Pública).
+export const DEFAULT_GEMINI_PROMPT = `Eres un analista experto en dotación docente del sistema educacional público chileno (SLEP - Servicios Locales de Educación Pública).
 Debes analizar detalladamente la estructura de las planillas que varía de una a otra pero todas buscan establecer lo mismo. Las columnas de la "c" a la "i" contienen los datos contractuales de los docentes mientras que en las columnas TOTAL HA* (horas Aula de 45 minutos), TOTAL HC** Sub. Gral (horas aula transformadas a cronológicas), TOTAL HC** Sub. SEP (horas cronológicas SEP), TOTAL HC** Sub. PIE (horas cronológicas PIE) y TOTAL HC. Considera que hay algunas celdas con el formato h:mm, [h]:mm y similares, que pueden afectar el cálculo pero cuentan como "horas cerradas".
 
 Debes clasificar cada una de las siguientes funciones, asignaturas o cargos escolares en exactamente UNA de estas 3 categorías oficiales:
@@ -132,10 +132,20 @@ const LOCAL_DICT: Record<string, string> = {
   'recreo 65/35': 'TECNICA',
   'recreos 65/35': 'TECNICA',
   'horas no lectivas': 'TECNICA',
+  'horas no lectivos': 'TECNICA',
   'horas no lectivas 60/40': 'TECNICA',
+  'horas no lectivos 60/40': 'TECNICA',
   'horas no lectivas 65/35': 'TECNICA',
+  'horas no lectivos 65/35': 'TECNICA',
+  'no lectiva': 'TECNICA',
+  'no lectivo': 'TECNICA',
+  'no lectivas': 'TECNICA',
+  'no lectivos': 'TECNICA',
+  'tiempo no lectivo': 'TECNICA',
+  'tiempo no lectiva': 'TECNICA',
   'tiempo funciones no lectivas (art. 69)': 'TECNICA',
   'tiempo funciones no lectivas (art 69)': 'TECNICA',
+  'tiempo funciones no lectivos (art. 69)': 'TECNICA',
   'art 69': 'TECNICA',
   'art. 69': 'TECNICA',
   'curriculista': 'TECNICA',
@@ -169,7 +179,7 @@ export function classifyLocal(text: string): { category: string; source: string;
     norm.includes('cra') ||
     norm.includes('enlace') ||
     norm.includes('recreo') ||
-    norm.includes('no lectiva') ||
+    norm.includes('no lectiv') ||
     norm.includes('art 69') ||
     norm.includes('art. 69') ||
     norm.includes('colaborativo') ||

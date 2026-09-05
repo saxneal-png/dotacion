@@ -197,9 +197,12 @@ export const ConsolidatedTable: React.FC<ConsolidatedTableProps> = ({
                   </td>
                   <td className="py-3 px-4 text-center">
                     {isDiscrepant ? (
-                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white shadow-xs">
+                      <span
+                        title={school.discrepancy_note || 'Descuadre o docentes > 44h'}
+                        className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-600 text-white shadow-xs cursor-help"
+                      >
                         <AlertTriangle className="w-3 h-3" />
-                        <span>Descuadre</span>
+                        <span>{school.over_44_count && school.over_44_count > 0 ? `${school.over_44_count} > 44h` : 'Descuadre'}</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">

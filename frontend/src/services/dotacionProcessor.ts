@@ -60,6 +60,9 @@ export async function processDotacionFilesClient(
           category: cat,
           source: classResult.source,
           total_declared: t.total_declared,
+          total_teacher_hours: t.total_teacher_hours || hours,
+          is_over_legal_limit: t.is_over_legal_limit || false,
+          legal_limit_warning: t.legal_limit_warning || '',
         });
       });
 
@@ -67,23 +70,36 @@ export async function processDotacionFilesClient(
 
       // Validación de cuadratura
       let hasDiscrepancy = false;
-      let discrepancyNote = '';
+      const discrepancyParts: string[] = [];
 
       // Comparar con horas contractuales totales declaradas deduplicadas por docente único
       const teacherContractMap = new Map<string, number>();
+      const over44Teachers = new Set<string>();
+
       parsed.teachers.forEach((t) => {
         const key = t.rut || t.teacher_name || 'unknown';
         const decl = t.total_declared || t.hours || 0;
         if (!teacherContractMap.has(key) || decl > (teacherContractMap.get(key) || 0)) {
           teacherContractMap.set(key, decl);
         }
+        if (t.is_over_legal_limit) {
+          over44Teachers.add(key);
+        }
       });
       const declaredSum = Array.from(teacherContractMap.values()).reduce((acc, val) => acc + val, 0);
+      const over44Count = over44Teachers.size;
 
       if (declaredSum > 0 && Math.abs(declaredSum - totalEE) > 1.0) {
         hasDiscrepancy = true;
-        discrepancyNote = `Descuadre: Suma calculada (${totalEE}h) vs Contrato (${Math.round(declaredSum)}h)`;
+        discrepancyParts.push(`Descuadre: Suma calculada (${totalEE}h) vs Contrato (${Math.round(declaredSum)}h)`);
       }
+
+      if (over44Count > 0) {
+        hasDiscrepancy = true;
+        discrepancyParts.push(`⚠️ ${over44Count} docente(s) superan tope legal de 44 hrs semanales`);
+      }
+
+      const discrepancyNote = discrepancyParts.join(' | ');
 
       const schoolKey = parsed.rbd || file.name;
       schoolsMap.set(schoolKey, {
@@ -95,6 +111,7 @@ export async function processDotacionFilesClient(
         horas_tecnicas: Math.round(schoolTecnica * 100) / 100,
         total_horas_ee: totalEE,
         teachers_count: teacherNames.size,
+        over_44_count: over44Count,
         has_discrepancy: hasDiscrepancy,
         discrepancy_note: discrepancyNote,
         source_file: file.name,
@@ -120,6 +137,8 @@ export async function processDotacionFilesClient(
   const pctDirectivas = totalGeneral > 0 ? Math.round((totalDirectivas / totalGeneral) * 1000) / 10 : 0;
   const pctTecnicas = totalGeneral > 0 ? Math.round((totalTecnicas / totalGeneral) * 1000) / 10 : 0;
   const discrepanciesCount = schools.filter((s) => s.has_discrepancy).length;
+  const teachersOver44Set = new Set(allTeachers.filter((t) => t.is_over_legal_limit).map((t) => t.rut || t.teacher_name));
+  const teachersOver44Count = teachersOver44Set.size;
 
   const kpis: KpiStats = {
     total_schools: totalSchools,
@@ -133,6 +152,7 @@ export async function processDotacionFilesClient(
     pct_directivas: pctDirectivas,
     pct_tecnicas: pctTecnicas,
     discrepancies_count: discrepanciesCount,
+    teachers_over_44_count: teachersOver44Count,
   };
 
   return {
@@ -195,6 +215,7 @@ export function recalculateSchoolTotals(teachers: TeacherRecord[], currentSchool
     pct_directivas: pctDirectivas,
     pct_tecnicas: pctTecnicas,
     discrepancies_count: updatedSchools.filter((s) => s.has_discrepancy).length,
+    teachers_over_44_count: new Set(teachers.filter((t) => t.is_over_legal_limit).map((t) => t.rut || t.teacher_name)).size,
   };
 
   return { schools: updatedSchools, kpis };

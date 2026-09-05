@@ -144,8 +144,18 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
                   <td className="py-2.5 px-4 font-medium text-slate-900">
                     {t.activity}
                   </td>
-                  <td className="py-2.5 px-4 text-right font-black text-slate-800 text-sm">
-                    {t.hours.toFixed(1)}
+                  <td className="py-2.5 px-4 text-right">
+                    <span className={`font-black text-sm ${t.is_over_legal_limit ? 'text-amber-800' : 'text-slate-800'}`}>
+                      {t.hours.toFixed(1)}
+                    </span>
+                    {t.is_over_legal_limit && (
+                      <span
+                        title={t.legal_limit_warning || `Supera el tope legal de 44 hrs (Docente registra ${t.total_teacher_hours}h)`}
+                        className="block text-[10px] text-amber-900 font-bold bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 mt-0.5 text-center cursor-help"
+                      >
+                        ⚠️ &gt;44h ({t.total_teacher_hours?.toFixed(1) || t.hours.toFixed(1)}h)
+                      </span>
+                    )}
                   </td>
                   <td className="py-2.5 px-4 text-center">
                     {isEditing ? (

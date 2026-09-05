@@ -10,6 +10,9 @@ export interface ParsedSchoolData {
     activity: string;
     hours: number;
     total_declared: number;
+    total_teacher_hours?: number;
+    is_over_legal_limit?: boolean;
+    legal_limit_warning?: string;
   }>;
 }
 
@@ -21,9 +24,20 @@ export function cleanStr(val: any): string {
 export function isRut(val: any): boolean {
   const s = cleanStr(val);
   if (!s) return false;
-  if (/\b\d{1,2}\.?\d{3}\.?\d{3}[-‐][0-9kK]\b/.test(s)) return true;
-  if (/\b\d{7,8}[kK]\b/.test(s)) return true;
-  if (/^\d{7,9}$/.test(s)) return true;
+  const sClean = s.replace(/,/g, '.').replace(/\s+/g, '');
+  if (/\b\d{1,2}\.?\d{3}\.?\d{3}[-‐][0-9kK]\b/.test(sClean)) return true;
+  if (/\b\d{7,8}[-‐]?[kK]\b/.test(sClean)) return true;
+  if (/^\d{7,9}$/.test(sClean)) return true;
+  return false;
+}
+
+export function isBlockSummaryLabel(s: string): boolean {
+  const sClean = s.trim().toLowerCase();
+  if (!sClean) return false;
+  if (/^(sub\s*general|subvenci[oó]n|plan\s*de\s*estudios?|horas?\s*plan|sep\b|pie\b|resumen\s*bloque|bloque)\b/.test(sClean)) {
+    if (/\d+\s*h/.test(sClean) || sClean.includes('plan de estudio')) return true;
+  }
+  if (/\b(sub\s*general|sub\s*sep|sub\s*pie|sep|pie)\s*[:\s]*\d+\s*h/.test(sClean)) return true;
   return false;
 }
 
@@ -73,7 +87,7 @@ export function extractRoleFromName(name: string): { cleanName: string; role: st
 }
 
 /**
- * Convierte cualquier valor de celda (decimal, texto, h:mm o [h]:mm) a horas cronológicas exactas.
+ * Convierte cualquier valor de celda (decimal, texto, h:mm, [h]:mm o Nh Mm) a horas cronológicas exactas.
  */
 export function parseHoursCell(val: any): number {
   if (val === null || val === undefined) return 0.0;
@@ -101,6 +115,17 @@ export function parseHoursCell(val: any): number {
     const m = parseInt(timeMatch[2] || '0', 10);
     const sec = parseInt(timeMatch[3] || '0', 10);
     const totalH = h + m / 60.0 + sec / 3600.0;
+    if (totalH > 0 && totalH <= 50) {
+      return Math.round(totalH * 100) / 100;
+    }
+  }
+
+  // Formato Nh Mm (ej. "19h 30 m", "19h 30m", "19 h 30 min", "0h 45m", "19 hrs 30 min")
+  const hmMatch = s.match(/(\d+)\s*h(?:rs?|oras?)?\s*(\d+)\s*m(?:in(?:utos?)?)?/i);
+  if (hmMatch) {
+    const h = parseInt(hmMatch[1], 10);
+    const m = parseInt(hmMatch[2] || '0', 10);
+    const totalH = h + m / 60.0;
     if (totalH > 0 && totalH <= 50) {
       return Math.round(totalH * 100) / 100;
     }
@@ -273,6 +298,7 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
   let colTotalHc = -1;
   let colActividad = -1;
   let colHorasSimple = -1;
+  let colObs = -1;
 
   for (let idx = 0; idx < headers.length; idx++) {
     const h = headers[idx];
@@ -288,26 +314,34 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
       'horas semanales', 'total carga horaria'
     ].some((k) => h.includes(k))) {
       colContrato = idx;
-    } else if (colTotalHa === -1 && (h.includes('total ha') || h.includes('horas aula'))) {
+    } else if (colTotalHa === -1 && (h.includes('total ha') || h.includes('horas aula') || h.includes('total h aula'))) {
       colTotalHa = idx;
-    } else if (colSubGral === -1 && ((h.includes('total hc') && h.includes('gral')) || h.includes('hc sub. gral') || h.includes('hc sub gral') || ((h.includes('sub. gral') || h.includes('sub gral')) && !h.includes('titular') && !h.includes('contrata')))) {
+    } else if (colSubGral === -1 && ((h.includes('hc') || h.includes('total')) && (h.includes('gral') || h.includes('general')) && !['titular', 'contrata', 'indefinid', 'plazo'].some((k) => h.includes(k)))) {
       colSubGral = idx;
-    } else if (colSubSep === -1 && ((h.includes('total hc') && h.includes('sep')) || h.includes('hc sub. sep') || h.includes('hc sub sep') || ((h.includes('sub. sep') || h.includes('sub sep')) && !h.includes('titular') && !h.includes('contrata')))) {
+    } else if (colSubSep === -1 && ((h.includes('hc') || h.includes('total')) && h.includes('sep') && !['titular', 'contrata', 'indefinid', 'plazo'].some((k) => h.includes(k)))) {
       colSubSep = idx;
-    } else if (colSubPie === -1 && ((h.includes('total hc') && h.includes('pie')) || h.includes('hc sub. pie') || h.includes('hc sub pie') || ((h.includes('sub. pie') || h.includes('sub pie')) && !h.includes('titular') && !h.includes('contrata')))) {
+    } else if (colSubPie === -1 && ((h.includes('hc') || h.includes('total')) && h.includes('pie') && !['titular', 'contrata', 'indefinid', 'plazo'].some((k) => h.includes(k)))) {
       colSubPie = idx;
-    } else if (colTotalHc === -1 && (h === 'total hc' || h.includes('total hc') || h.includes('total cronologicas') || h.includes('total cronológicas') || h.includes('horas cronologicas') || h.includes('horas cronológicas'))) {
+    } else if (colTotalHc === -1 && ((h === 'total hc' || h === 'total hc*' || h === 'total hc**') || ((h.includes('total') && h.includes('hc')) && !['gral', 'sep', 'pie', 'ha', 'curso'].some((k) => h.includes(k))) || h.includes('total cronologicas') || h.includes('total cronológicas'))) {
       colTotalHc = idx;
     } else if (colActividad === -1 && ['asignatura', 'cargo', 'funcion', 'función', 'actividad', 'rol', 'especialidad', 'materia', 'descripcion', 'descripción'].some((k) => h.includes(k))) {
       colActividad = idx;
     } else if (colHorasSimple === -1 && ['horas asignadas', 'horas lectivas', 'jornada', 'horas', 'hora', 'hrs'].some((k) => h.includes(k))) {
       colHorasSimple = idx;
+    } else if (colObs === -1 && ['observac', 'comentarios', 'detalle'].some((k) => h.includes(k))) {
+      colObs = idx;
     }
   }
 
   if (colNombres === -1) colNombres = 0;
 
-  const teachersData: ParsedSchoolData['teachers'] = [];
+  const teachersByKey = new Map<string, {
+    name: string;
+    rut: string;
+    contract: number;
+    activities: Array<{ name: string; hours: number }>;
+    seenCount: number;
+  }>();
 
   // CASE 1: Flat / Standard spreadsheet (explicit activity column)
   if (colActividad !== -1 && (colHorasSimple !== -1 || colContrato !== -1 || colTotalHc !== -1)) {
@@ -339,7 +373,7 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
         currentTeacher = nombreRaw;
       }
       if (runRaw) {
-        currentRut = runRaw.replace(',', '.').replace(/\s+/g, '');
+        currentRut = runRaw.replace(/,/g, '.').replace(/\s+/g, '');
       }
       if (contratoNum > 0) {
         currentContract = contratoNum;
@@ -347,165 +381,221 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
         currentContract = totHc;
       }
 
-      const actH = hSimple > 0 ? hSimple : totHc > 0 ? totHc : contratoNum;
-      
-      // Never omit teacher: fallback activity if blank
       const { cleanName: cleanTname, role: roleInName } = extractRoleFromName(currentTeacher);
+      const tKey = currentRut || cleanTname;
+      if (!tKey) continue;
+
+      if (!teachersByKey.has(tKey)) {
+        teachersByKey.set(tKey, {
+          name: cleanTname,
+          rut: currentRut,
+          contract: currentContract,
+          activities: [],
+          seenCount: 1,
+        });
+      } else {
+        const entry = teachersByKey.get(tKey)!;
+        entry.seenCount++;
+        if (currentContract > entry.contract) {
+          entry.contract = currentContract;
+        }
+      }
+
+      const actH = hSimple > 0 ? hSimple : totHc > 0 ? totHc : contratoNum;
       const finalAct = actRaw || roleInName || 'Docencia de Aula';
 
-      if (currentTeacher && (actH > 0 || currentContract > 0)) {
-        const effectiveH = actH > 0 ? actH : currentContract;
-        teachersData.push({
-          teacher_name: cleanTname,
-          rut: currentRut,
-          activity: finalAct,
-          hours: Math.round(effectiveH * 100) / 100,
-          total_declared: currentContract > 0 ? currentContract : effectiveH,
-        });
+      if (actH > 0) {
+        teachersByKey.get(tKey)!.activities.push({ name: finalAct, hours: actH });
       }
     }
+  } else {
+    // CASE 2: SLEP Hierarchical spreadsheet (activities in sub-rows under colNombres)
+    let r = dataStartIdx;
+    let currentSection = '';
 
-    return {
-      rbd,
-      establishment,
-      matricula,
-      teachers: teachersData,
-    };
-  }
+    while (r < data.length) {
+      const row = data[r] || [];
+      const c1 = cleanStr(row[colNombres]);
+      const c2 = colRun !== -1 && colRun < row.length ? cleanStr(row[colRun]) : '';
+      const obs = colObs !== -1 && colObs < row.length ? cleanStr(row[colObs]) : '';
 
-  // CASE 2: SLEP Hierarchical spreadsheet (activities in sub-rows under colNombres)
-  let r = dataStartIdx;
-  let currentSection = '';
-
-  while (r < data.length) {
-    const row = data[r] || [];
-    const c1 = cleanStr(row[colNombres]);
-    const c2 = colRun !== -1 && colRun < row.length ? cleanStr(row[colRun]) : '';
-
-    // Check section headers
-    if (!c2 && c1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'ASISTENTES', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => c1.toUpperCase().includes(k)) && !looksLikeTeacherName(c1)) {
-      currentSection = c1.toUpperCase();
-      r++;
-      continue;
-    }
-
-    if (isSummaryOrTotalLabel(c1)) {
-      r++;
-      continue;
-    }
-
-    const hasRun = colRun !== -1 ? isRut(c2) : false;
-    const contratoNum = colContrato !== -1 && colContrato < row.length ? parseHoursCell(row[colContrato]) : 0.0;
-    
-    // Check any master hours
-    const hGralMaster = colSubGral !== -1 && colSubGral < row.length ? parseHoursCell(row[colSubGral]) : 0.0;
-    const hSepMaster = colSubSep !== -1 && colSubSep < row.length ? parseHoursCell(row[colSubSep]) : 0.0;
-    const hPieMaster = colSubPie !== -1 && colSubPie < row.length ? parseHoursCell(row[colSubPie]) : 0.0;
-    const totHcMaster = colTotalHc !== -1 && colTotalHc < row.length ? parseHoursCell(row[colTotalHc]) : 0.0;
-    const anyMasterH = (contratoNum > 0 || hGralMaster > 0 || hSepMaster > 0 || hPieMaster > 0 || totHcMaster > 0);
-
-    const isValidTeacher = hasRun || (looksLikeTeacherName(c1) && (anyMasterH || c1 !== ''));
-    if (!isValidTeacher) {
-      r++;
-      continue;
-    }
-
-    const { cleanName: teacherName, role: roleInName } = extractRoleFromName(c1);
-    const teacherRut = c2 ? c2.replace(',', '.').replace(/\s+/g, '') : '';
-
-    const subRows: Array<{ name: string; hours: number }> = [];
-    let subR = r + 1;
-
-    while (subR < data.length) {
-      const subRow = data[subR] || [];
-      const subC1 = cleanStr(subRow[colNombres]);
-      const subC2 = colRun !== -1 && colRun < subRow.length ? cleanStr(subRow[colRun]) : '';
-
-      // Stop if next row is teacher with RUN
-      if (colRun !== -1 && isRut(subC2)) {
-        break;
+      // Check section headers
+      if (!c2 && c1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'ASISTENTES', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => c1.toUpperCase().includes(k)) && !looksLikeTeacherName(c1)) {
+        currentSection = c1.toUpperCase();
+        r++;
+        continue;
       }
-      // Stop if next row is teacher with name & contract
-      const subContrato = colContrato !== -1 && colContrato < subRow.length ? parseHoursCell(subRow[colContrato]) : 0.0;
-      if (looksLikeTeacherName(subC1) && subContrato > 0) {
-        break;
+
+      if (isSummaryOrTotalLabel(c1)) {
+        r++;
+        continue;
       }
-      // Stop if section header
-      if (!subC2 && subC1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => subC1.toUpperCase().includes(k)) && !looksLikeTeacherName(subC1)) {
-        break;
+
+      const hasRun = colRun !== -1 ? isRut(c2) : false;
+      const contratoNum = colContrato !== -1 && colContrato < row.length ? parseHoursCell(row[colContrato]) : 0.0;
+      
+      // Check master row hours
+      const hGralMaster = colSubGral !== -1 && colSubGral < row.length ? parseHoursCell(row[colSubGral]) : 0.0;
+      const hSepMaster = colSubSep !== -1 && colSubSep < row.length ? parseHoursCell(row[colSubSep]) : 0.0;
+      const hPieMaster = colSubPie !== -1 && colSubPie < row.length ? parseHoursCell(row[colSubPie]) : 0.0;
+      const totHcMaster = colTotalHc !== -1 && colTotalHc < row.length ? parseHoursCell(row[colTotalHc]) : 0.0;
+      const totHaMaster = colTotalHa !== -1 && colTotalHa < row.length ? parseHoursCell(row[colTotalHa]) : 0.0;
+      const anyMasterH = (contratoNum > 0 || hGralMaster > 0 || hSepMaster > 0 || hPieMaster > 0 || totHcMaster > 0 || totHaMaster > 0);
+
+      const isValidTeacher = hasRun || (looksLikeTeacherName(c1) && (anyMasterH || c1 !== ''));
+      if (!isValidTeacher) {
+        r++;
+        continue;
       }
-      // Stop if summary row (do NOT add as activity)
-      if (isSummaryOrTotalLabel(subC1)) {
+
+      const { cleanName: teacherName, role: roleInName } = extractRoleFromName(c1);
+      const cleanRut = c2 ? c2.replace(/,/g, '.').replace(/\s+/g, '') : '';
+      const tKey = cleanRut || teacherName;
+      if (!tKey) {
+        r++;
+        continue;
+      }
+
+      const subRows: Array<{ name: string; hours: number; isBlock: boolean }> = [];
+      let subR = r + 1;
+
+      while (subR < data.length) {
+        const subRow = data[subR] || [];
+        const subC1 = cleanStr(subRow[colNombres]);
+        const subC2 = colRun !== -1 && colRun < subRow.length ? cleanStr(subRow[colRun]) : '';
+
+        // Stop if next row is teacher with RUN
+        if (colRun !== -1 && isRut(subC2)) {
+          break;
+        }
+        // Stop if next row is teacher with name & contract
+        const subContrato = colContrato !== -1 && colContrato < subRow.length ? parseHoursCell(subRow[colContrato]) : 0.0;
+        if (looksLikeTeacherName(subC1) && subContrato > 0) {
+          break;
+        }
+        // Stop if section header
+        if (!subC2 && subC1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => subC1.toUpperCase().includes(k)) && !looksLikeTeacherName(subC1)) {
+          break;
+        }
+        // Stop if summary row
+        if (isSummaryOrTotalLabel(subC1)) {
+          subR++;
+          break;
+        }
+
+        if (subC1) {
+          const isBlock = isBlockSummaryLabel(subC1);
+          const hGral = colSubGral !== -1 && colSubGral < subRow.length ? parseHoursCell(subRow[colSubGral]) : 0.0;
+          const hSep = colSubSep !== -1 && colSubSep < subRow.length ? parseHoursCell(subRow[colSubSep]) : 0.0;
+          const hPie = colSubPie !== -1 && colSubPie < subRow.length ? parseHoursCell(subRow[colSubPie]) : 0.0;
+          const totHc = colTotalHc !== -1 && colTotalHc < subRow.length ? parseHoursCell(subRow[colTotalHc]) : 0.0;
+          const totHa = colTotalHa !== -1 && colTotalHa < subRow.length ? parseHoursCell(subRow[colTotalHa]) : 0.0;
+
+          let h = hGral + hSep + hPie;
+          if (h === 0.0 && totHc > 0.0) h = totHc;
+          if (h === 0.0 && totHa > 0.0) h = (totHa * 45.0) / 60.0;
+
+          if (h > 0) {
+            subRows.push({ name: subC1, hours: Math.round(h * 100) / 100, isBlock });
+          }
+        }
+
         subR++;
-        break;
       }
 
-      if (subC1) {
-        const hGral = colSubGral !== -1 && colSubGral < subRow.length ? parseHoursCell(subRow[colSubGral]) : 0.0;
-        const hSep = colSubSep !== -1 && colSubSep < subRow.length ? parseHoursCell(subRow[colSubSep]) : 0.0;
-        const hPie = colSubPie !== -1 && colSubPie < subRow.length ? parseHoursCell(subRow[colSubPie]) : 0.0;
-        const totHc = colTotalHc !== -1 && colTotalHc < subRow.length ? parseHoursCell(subRow[colTotalHc]) : 0.0;
-        const totHa = colTotalHa !== -1 && colTotalHa < subRow.length ? parseHoursCell(subRow[colTotalHa]) : 0.0;
-
-        let h = hGral + hSep + hPie;
-        if (h === 0.0 && totHc > 0.0) h = totHc;
-        if (h === 0.0 && totHa > 0.0) h = (totHa * 45.0) / 60.0;
-
-        if (h > 0) {
-          subRows.push({ name: subC1, hours: Math.round(h * 100) / 100 });
+      if (!teachersByKey.has(tKey)) {
+        teachersByKey.set(tKey, {
+          name: teacherName,
+          rut: cleanRut,
+          contract: contratoNum,
+          activities: [],
+          seenCount: 1,
+        });
+      } else {
+        const entry = teachersByKey.get(tKey)!;
+        entry.seenCount++;
+        if (contratoNum > entry.contract) {
+          entry.contract = contratoNum;
         }
       }
 
-      subR++;
-    }
+      const tEntry = teachersByKey.get(tKey)!;
 
-    if (subRows.length > 0) {
-      for (const item of subRows) {
-        teachersData.push({
-          teacher_name: teacherName,
-          rut: teacherRut,
-          activity: item.name,
-          hours: item.hours,
-          total_declared: contratoNum > 0 ? contratoNum : item.hours,
-        });
-      }
-    } else {
-      let actName = roleInName;
-      if (!actName) {
-        if (currentSection.includes('PIE') || (colSubPie !== -1 && colSubPie < row.length && parseHoursCell(row[colSubPie]) > 0)) {
-          actName = 'Docente PIE';
-        } else if (currentSection.includes('CO DOCENTE')) {
-          actName = 'Co-docente';
+      // Filter block summaries: if child activities exist, exclude block headers to avoid double counting
+      const nonBlockItems = subRows.filter((item) => !item.isBlock);
+      const validItems = nonBlockItems.length > 0 ? nonBlockItems : subRows;
+
+      if (validItems.length > 0) {
+        for (const item of validItems) {
+          tEntry.activities.push({ name: item.name, hours: item.hours });
+        }
+      } else {
+        let masterH = hGralMaster + hSepMaster + hPieMaster;
+        if (masterH === 0.0 && totHcMaster > 0.0) masterH = totHcMaster;
+        if (masterH === 0.0 && totHaMaster > 0.0) masterH = (totHaMaster * 45.0) / 60.0;
+
+        // Deduplication for multi-row teachers:
+        if (tEntry.seenCount > 1 && masterH === 0.0) {
+          // Repeated course breakdown row with 0 new hours
+        } else if (tEntry.seenCount > 1 && tEntry.activities.length > 0 && masterH === tEntry.contract) {
+          // Repeated contract total row
         } else {
-          actName = 'Docencia de Aula';
+          let actName = roleInName;
+          if (!actName) {
+            if (currentSection.includes('PIE') || hPieMaster > 0) {
+              actName = 'Docente PIE';
+            } else if (currentSection.includes('CO DOCENTE')) {
+              actName = 'Co-docente';
+            } else if (obs) {
+              actName = obs;
+            } else {
+              actName = 'Docencia de Aula';
+            }
+          }
+
+          const effH = masterH > 0 ? masterH : contratoNum;
+          if (effH > 0) {
+            tEntry.activities.push({ name: actName, hours: Math.round(effH * 100) / 100 });
+          }
         }
       }
 
-      let hRow = contratoNum;
-      if (hRow === 0.0) {
-        const hGral = colSubGral !== -1 && colSubGral < row.length ? parseHoursCell(row[colSubGral]) : 0.0;
-        const hSep = colSubSep !== -1 && colSubSep < row.length ? parseHoursCell(row[colSubSep]) : 0.0;
-        const hPie = colSubPie !== -1 && colSubPie < row.length ? parseHoursCell(row[colSubPie]) : 0.0;
-        hRow = hGral + hSep + hPie;
-        if (hRow === 0.0 && colTotalHc !== -1 && colTotalHc < row.length) {
-          hRow = parseHoursCell(row[colTotalHc]);
-        }
-      }
+      r = subR;
+    }
+  }
 
-      if (hRow > 0 || contratoNum > 0) {
-        const effectiveH = hRow > 0 ? hRow : contratoNum;
-        teachersData.push({
-          teacher_name: teacherName,
-          rut: teacherRut,
-          activity: actName,
-          hours: Math.round(effectiveH * 100) / 100,
-          total_declared: contratoNum > 0 ? contratoNum : effectiveH,
-        });
-      }
+  // Consolidate teachers and audit the legal 44h limit (Art. 80 Estatuto Docente)
+  const teachersData: ParsedSchoolData['teachers'] = [];
+
+  teachersByKey.forEach((tData) => {
+    let totH = Math.round(tData.activities.reduce((acc, a) => acc + a.hours, 0) * 100) / 100;
+    const decl = tData.contract > 0 ? tData.contract : totH;
+    if (tData.activities.length === 0 && decl > 0) {
+      tData.activities.push({ name: 'Docencia de Aula', hours: decl });
+      totH = decl;
     }
 
-    r = subR;
-  }
+    const isOver44 = (totH > 44.0 || decl > 44.0);
+    let warn = '';
+    if (isOver44) {
+      const maxVal = Math.max(totH, decl);
+      const diff = Math.round((maxVal - 44.0) * 100) / 100;
+      warn = `⚠️ Supera el tope legal de 44 hrs semanales: registra ${maxVal.toFixed(1)} hrs (+${diff.toFixed(1)} hrs de sobrecarga). Posible error de cálculo del establecimiento.`;
+    }
+
+    tData.activities.forEach((act) => {
+      teachersData.push({
+        teacher_name: tData.name,
+        rut: tData.rut,
+        activity: act.name,
+        hours: act.hours,
+        total_declared: decl,
+        total_teacher_hours: totH,
+        is_over_legal_limit: isOver44,
+        legal_limit_warning: warn,
+      });
+    });
+  });
 
   return {
     rbd,

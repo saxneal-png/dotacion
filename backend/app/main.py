@@ -266,7 +266,10 @@ def process_file_data(file_input, filename: str, api_key: Optional[str] = None, 
             "hours": hours,
             "category": cat,
             "source": src,
-            "total_declared": t.get("total_declared", hours)
+            "total_declared": t.get("total_declared", hours),
+            "total_teacher_hours": t.get("total_teacher_hours", hours),
+            "is_over_legal_limit": t.get("is_over_legal_limit", False),
+            "legal_limit_warning": t.get("legal_limit_warning", "")
         }
         school_teachers.append(teacher_record)
 
@@ -285,23 +288,33 @@ def process_file_data(file_input, filename: str, api_key: Optional[str] = None, 
     
     # Calculate unique teachers count and deduplicated declared contract hours
     unique_teacher_contracts = {}
+    over_44_teachers = set()
     for t in teachers:
         t_key = t.get("rut") or t.get("teacher_name") or "unknown"
         decl = float(t.get("total_declared") or t.get("hours", 0.0))
         if t_key not in unique_teacher_contracts or decl > unique_teacher_contracts[t_key]:
             unique_teacher_contracts[t_key] = decl
+        if t.get("is_over_legal_limit"):
+            over_44_teachers.add(t_key)
 
     declared_contract_sum = sum(unique_teacher_contracts.values())
     unique_teachers_count = len([k for k in unique_teacher_contracts if k != "unknown"]) or len(teachers)
+    over_44_count = len(over_44_teachers)
 
     # Discrepancy validation
     has_discrepancy = False
-    discrepancy_note = ""
+    discrepancy_parts = []
 
     calc_sum = round(h_aula + h_dir + h_tec, 2)
     if declared_contract_sum > 0 and abs(calc_sum - declared_contract_sum) > 1.0:
         has_discrepancy = True
-        discrepancy_note = f"Diferencia entre horas calculadas ({calc_sum:.1f}h) y contrato consolidado ({declared_contract_sum:.1f}h)"
+        discrepancy_parts.append(f"Diferencia entre horas calculadas ({calc_sum:.1f}h) y contrato consolidado ({declared_contract_sum:.1f}h)")
+
+    if over_44_count > 0:
+        has_discrepancy = True
+        discrepancy_parts.append(f"⚠️ {over_44_count} docente(s) superan tope legal de 44 hrs semanales. Posible error de cálculo del establecimiento.")
+
+    discrepancy_note = " | ".join(discrepancy_parts)
 
     school_summary = {
         "rbd": parsed["rbd"],
@@ -312,6 +325,7 @@ def process_file_data(file_input, filename: str, api_key: Optional[str] = None, 
         "horas_tecnicas": round(h_tec, 1),
         "total_horas_ee": round(tot_ee, 1),
         "teachers_count": unique_teachers_count,
+        "over_44_count": over_44_count,
         "has_discrepancy": has_discrepancy,
         "discrepancy_note": discrepancy_note,
         "source_file": filename
