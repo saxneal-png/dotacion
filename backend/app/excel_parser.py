@@ -40,10 +40,9 @@ def is_block_summary_label(s: str) -> bool:
     s_clean = s.strip().lower()
     if not s_clean:
         return False
-    if re.search(r"^(sub\s*general|subvenci[oó]n|plan\s*de\s*estudios?|horas?\s*plan|sep\b|pie\b|resumen\s*bloque|bloque)\b", s_clean):
-        if re.search(r"\d+\s*h", s_clean) or "plan de estudio" in s_clean:
-            return True
-    if re.search(r"\b(sub\s*general|sub\s*sep|sub\s*pie|sep|pie)\s*[:\s]*\d+\s*h", s_clean):
+    if re.search(r"^(resumen\s*bloque|bloque\s*subvenci[oó]n|total\s*bloque)\b", s_clean):
+        return True
+    if re.search(r"\b(sub\s*general|sub\s*sep|sub\s*pie|subvenci[oó]n|horas?\s*plan)\s*[:\s]*\d+\s*h", s_clean):
         return True
     return False
 
@@ -541,8 +540,8 @@ class SchoolDataExtractor:
                 c2 = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
                 obs = clean_str(df.iat[r, col_obs]) if col_obs != -1 and col_obs < df.shape[1] else ""
 
-                # Check section headers
-                if not c2 and c1 and any(k in c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(c1):
+                # Check section headers (only if no master hours and no RUT)
+                if not c2 and c1 and not any_master_h and any(k in c1.upper() for k in ["PROGRAMA PIE", "EQUIPO PIE", "DOCENTES PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(c1):
                     current_section = c1.upper()
                     r += 1
                     continue
@@ -589,8 +588,21 @@ class SchoolDataExtractor:
                     sub_contrato = parse_hours_cell(df.iat[sub_r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
                     if looks_like_teacher_name(sub_c1) and sub_contrato > 0:
                         break
-                    # Stop if section header
-                    if not sub_c2 and sub_c1 and any(k in sub_c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(sub_c1):
+
+                    h_gral = parse_hours_cell(df.iat[sub_r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
+                    h_sep = parse_hours_cell(df.iat[sub_r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
+                    h_pie = parse_hours_cell(df.iat[sub_r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
+                    tot_hc = parse_hours_cell(df.iat[sub_r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
+                    tot_ha = parse_hours_cell(df.iat[sub_r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
+
+                    h = h_gral + h_sep + h_pie
+                    if h == 0.0 and tot_hc > 0.0:
+                        h = tot_hc
+                    if h == 0.0 and tot_ha > 0.0:
+                        h = tot_ha * 45.0 / 60.0
+
+                    # Stop if section header (must have no hours and match explicit section phrase)
+                    if not sub_c2 and sub_c1 and h == 0 and any(k in sub_c1.upper() for k in ["PROGRAMA PIE", "EQUIPO PIE", "DOCENTES PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(sub_c1):
                         break
                     # Stop if summary row
                     if is_summary_or_total_label(sub_c1):
@@ -599,18 +611,6 @@ class SchoolDataExtractor:
 
                     if sub_c1:
                         is_block = is_block_summary_label(sub_c1)
-                        h_gral = parse_hours_cell(df.iat[sub_r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
-                        h_sep = parse_hours_cell(df.iat[sub_r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
-                        h_pie = parse_hours_cell(df.iat[sub_r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
-                        tot_hc = parse_hours_cell(df.iat[sub_r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
-                        tot_ha = parse_hours_cell(df.iat[sub_r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
-
-                        h = h_gral + h_sep + h_pie
-                        if h == 0.0 and tot_hc > 0.0:
-                            h = tot_hc
-                        if h == 0.0 and tot_ha > 0.0:
-                            h = tot_ha * 45.0 / 60.0
-
                         if h > 0:
                             sub_rows.append({"name": sub_c1, "hours": round(h, 2), "is_block": is_block})
 

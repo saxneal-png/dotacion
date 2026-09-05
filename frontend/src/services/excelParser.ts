@@ -34,10 +34,12 @@ export function isRut(val: any): boolean {
 export function isBlockSummaryLabel(s: string): boolean {
   const sClean = s.trim().toLowerCase();
   if (!sClean) return false;
-  if (/^(sub\s*general|subvenci[oó]n|plan\s*de\s*estudios?|horas?\s*plan|sep\b|pie\b|resumen\s*bloque|bloque)\b/.test(sClean)) {
-    if (/\d+\s*h/.test(sClean) || sClean.includes('plan de estudio')) return true;
+  if (/^(resumen\s*bloque|bloque\s*subvenci[oó]n|total\s*bloque)\b/i.test(sClean)) {
+    return true;
   }
-  if (/\b(sub\s*general|sub\s*sep|sub\s*pie|sep|pie)\s*[:\s]*\d+\s*h/.test(sClean)) return true;
+  if (/\b(sub\s*general|sub\s*sep|sub\s*pie|subvenci[oó]n|horas?\s*plan)\s*[:\s]*\d+\s*h/i.test(sClean)) {
+    return true;
+  }
   return false;
 }
 
@@ -476,18 +478,6 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
       const c2 = colRun !== -1 && colRun < row.length ? cleanStr(row[colRun]) : '';
       const obs = colObs !== -1 && colObs < row.length ? cleanStr(row[colObs]) : '';
 
-      // Check section headers
-      if (!c2 && c1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'ASISTENTES', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => c1.toUpperCase().includes(k)) && !looksLikeTeacherName(c1)) {
-        currentSection = c1.toUpperCase();
-        r++;
-        continue;
-      }
-
-      if (isSummaryOrTotalLabel(c1)) {
-        r++;
-        continue;
-      }
-
       const hasRun = colRun !== -1 ? isRut(c2) : false;
       const contratoNum = colContrato !== -1 && colContrato < row.length ? parseHoursCell(row[colContrato]) : 0.0;
       
@@ -498,6 +488,18 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
       const totHcMaster = colTotalHc !== -1 && colTotalHc < row.length ? parseHoursCell(row[colTotalHc]) : 0.0;
       const totHaMaster = colTotalHa !== -1 && colTotalHa < row.length ? parseHoursCell(row[colTotalHa]) : 0.0;
       const anyMasterH = (contratoNum > 0 || hGralMaster > 0 || hSepMaster > 0 || hPieMaster > 0 || totHcMaster > 0 || totHaMaster > 0);
+
+      // Check section headers (only if row has no hours and no RUT)
+      if (!c2 && c1 && !anyMasterH && ['PROGRAMA PIE', 'EQUIPO PIE', 'DOCENTES PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'ASISTENTES', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => c1.toUpperCase().includes(k)) && !looksLikeTeacherName(c1)) {
+        currentSection = c1.toUpperCase();
+        r++;
+        continue;
+      }
+
+      if (isSummaryOrTotalLabel(c1)) {
+        r++;
+        continue;
+      }
 
       const isValidTeacher = hasRun || (looksLikeTeacherName(c1) && (anyMasterH || c1 !== ''));
       if (!isValidTeacher) {
@@ -530,8 +532,19 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
         if (looksLikeTeacherName(subC1) && subContrato > 0) {
           break;
         }
-        // Stop if section header
-        if (!subC2 && subC1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => subC1.toUpperCase().includes(k)) && !looksLikeTeacherName(subC1)) {
+
+        const hGral = colSubGral !== -1 && colSubGral < subRow.length ? parseHoursCell(subRow[colSubGral]) : 0.0;
+        const hSep = colSubSep !== -1 && colSubSep < subRow.length ? parseHoursCell(subRow[colSubSep]) : 0.0;
+        const hPie = colSubPie !== -1 && colSubPie < subRow.length ? parseHoursCell(subRow[colSubPie]) : 0.0;
+        const totHc = colTotalHc !== -1 && colTotalHc < subRow.length ? parseHoursCell(subRow[colTotalHc]) : 0.0;
+        const totHa = colTotalHa !== -1 && colTotalHa < subRow.length ? parseHoursCell(subRow[colTotalHa]) : 0.0;
+
+        let h = hGral + hSep + hPie;
+        if (h === 0.0 && totHc > 0.0) h = totHc;
+        if (h === 0.0 && totHa > 0.0) h = (totHa * 45.0) / 60.0;
+
+        // Stop if section header (must have no hours and match explicit section phrase)
+        if (!subC2 && subC1 && h === 0 && ['PROGRAMA PIE', 'EQUIPO PIE', 'DOCENTES PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => subC1.toUpperCase().includes(k)) && !looksLikeTeacherName(subC1)) {
           break;
         }
         // Stop if summary row
@@ -542,16 +555,6 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
 
         if (subC1) {
           const isBlock = isBlockSummaryLabel(subC1);
-          const hGral = colSubGral !== -1 && colSubGral < subRow.length ? parseHoursCell(subRow[colSubGral]) : 0.0;
-          const hSep = colSubSep !== -1 && colSubSep < subRow.length ? parseHoursCell(subRow[colSubSep]) : 0.0;
-          const hPie = colSubPie !== -1 && colSubPie < subRow.length ? parseHoursCell(subRow[colSubPie]) : 0.0;
-          const totHc = colTotalHc !== -1 && colTotalHc < subRow.length ? parseHoursCell(subRow[colTotalHc]) : 0.0;
-          const totHa = colTotalHa !== -1 && colTotalHa < subRow.length ? parseHoursCell(subRow[colTotalHa]) : 0.0;
-
-          let h = hGral + hSep + hPie;
-          if (h === 0.0 && totHc > 0.0) h = totHc;
-          if (h === 0.0 && totHa > 0.0) h = (totHa * 45.0) / 60.0;
-
           if (h > 0) {
             subRows.push({ name: subC1, hours: Math.round(h * 100) / 100, isBlock });
           }
