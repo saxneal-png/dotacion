@@ -136,3 +136,57 @@ def test_merged_cells_teacher_block():
     assert t3['teacher_name'] == 'CAMILA SOTO'
     assert t3['activity'] == 'Matemática'
     assert t3['hours'] == 40.0
+
+def test_day_fraction_hours():
+    # Excel time serial fractions (SheetJS raw number fallback)
+    assert parse_hours_cell(0.267361) == 6.42
+    assert parse_hours_cell(0.5) == 12.0
+    assert parse_hours_cell('0.267361') == 6.42
+    assert parse_hours_cell('0.5') == 12.0
+    assert parse_hours_cell(0.125) == 3.0
+
+def test_teacher_without_rut_not_omitted():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(['RBD: 11111', 'ESCUELA PRUEBA SIN RUT'])
+    ws.append(['NOMBRES', 'RUN', 'ACTIVIDAD', 'HORAS TOTALES'])
+    ws.append(['DOCENTE POR CONTRATAR', '', 'Matemática', 30])
+    ws.append(['VACANTE LENGUAJE', 'S/RUT', 'Lenguaje', 44])
+    ws.append(['MARIA PEREZ (DIRECTOR)', '12.345.678-9', '', 44])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    parsed = parse_excel_file(buf.getvalue(), 'Test_Sin_Rut.xlsx')
+    assert len(parsed['teachers']) == 3
+    assert parsed['teachers'][0]['teacher_name'] == 'DOCENTE POR CONTRATAR'
+    assert parsed['teachers'][0]['activity'] == 'Matemática'
+    assert parsed['teachers'][0]['hours'] == 30.0
+
+    assert parsed['teachers'][1]['teacher_name'] == 'VACANTE LENGUAJE'
+    assert parsed['teachers'][1]['activity'] == 'Lenguaje'
+    assert parsed['teachers'][1]['hours'] == 44.0
+
+    assert parsed['teachers'][2]['teacher_name'] == 'MARIA PEREZ'
+    assert parsed['teachers'][2]['activity'] == 'Director'
+    assert parsed['teachers'][2]['hours'] == 44.0
+
+def test_subtotal_rows_not_counted_as_hours():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(['RBD: 22222', 'ESCUELA SUB-TOTALES'])
+    ws.append(['NOMBRES', 'RUN', 'ACTIVIDAD', 'TOTAL HC'])
+    ws.append(['PEDRO PASCAL', '15.111.222-3', 'Física', 20])
+    ws.append(['PEDRO PASCAL', '15.111.222-3', 'Química', 24])
+    ws.append(['TOTAL DOCENTE', '', '', 44])
+    ws.append(['TOTAL GENERAL', '', '', 44])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    parsed = parse_excel_file(buf.getvalue(), 'Test_Subtotales.xlsx')
+    assert len(parsed['teachers']) == 2
+    total_h = sum(t['hours'] for t in parsed['teachers'])
+    assert total_h == 44.0  # Exactly 20 + 24 = 44, not 44 + 44 + 44 = 132!

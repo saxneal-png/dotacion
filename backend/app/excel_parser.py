@@ -42,16 +42,38 @@ def extract_role_from_name(name: str) -> Tuple[str, str]:
         return clean_name, role
     return name.strip(), ""
 
+def is_summary_or_total_label(s: str) -> bool:
+    """
+    Identifies summary, total, subtotal, and decorative metadata rows to avoid counting them as teachers/activities.
+    """
+    s_clean = s.strip().lower()
+    if not s_clean:
+        return False
+    patterns = [
+        r"^(total|subtotal|sub-total|sub\s*total|resumen|suma|promedio|totales|carga\s*horaria|total\s*general|total\s*docente|total\s*contrato|total\s*horas|total\s*hrs)\b",
+        r"^(rbd|escuela|colegio|liceo|slep|servicio\s*local|simbolog[ií]a|observacion(es)?)\b"
+    ]
+    return any(re.search(p, s_clean) for p in patterns)
+
 def looks_like_teacher_name(s: str) -> bool:
     """
-    Heuristic to differentiate teacher person names from activity / subject labels.
+    Heuristic to differentiate teacher person names (including placeholders like 'DOCENTE POR CONTRATAR')
+    from activity / subject labels or summary labels.
     """
     s_clean = s.strip()
-    if len(s_clean) < 4:
+    if len(s_clean) < 3:
+        return False
+    if is_summary_or_total_label(s_clean):
         return False
     s_lower = s_clean.lower()
-    if any(k in s_lower for k in ["total", "subtotal", "promedio", "resumen", "rbd", "escuela", "colegio", "liceo", "slep"]):
-        return False
+    
+    # Check common teacher placeholders in public schools
+    if any(k in s_lower for k in [
+        "vacante", "por contratar", "reemplazo", "sin asignar", "a contratar", 
+        "docente nuevo", "profesor nuevo", "pendiente", "profesional de apoyo"
+    ]):
+        return True
+
     if any(s_lower.startswith(k) for k in [
         "recreo", "taller", "asignatura", "docencia", "planificacion", "planificación",
         "tiempo", "artículo", "art.", "horas", "formacion", "formación", "historia",
@@ -61,8 +83,9 @@ def looks_like_teacher_name(s: str) -> bool:
         "religion", "religión", "orientacion", "orientación", "cra", "pie", "sep", "utp"
     ]):
         return False
+
     parts = s_clean.split()
-    return len(parts) >= 2
+    return len(parts) >= 2 or len(s_clean) >= 5
 
 def parse_hours_cell(val: Any) -> float:
     """
@@ -74,6 +97,7 @@ def parse_hours_cell(val: Any) -> float:
     - datetime.datetime(1900, 1, 1, 14, 0) -> 14.0 (Excel time representation)
     - datetime.datetime(1900, 1, 2, 20, 0) -> 44.0 (Excel duration representation)
     - pd.Timestamp('1900-01-01 12:30:00') -> 12.5
+    - Raw Excel day fractions: 0.267361 -> 6.42 hrs (0.267361 * 24), 0.5 -> 12.0 hrs
     - "12:00" / "12:00:00" -> 12.0
     - "1:34" -> 1.57
     - "[40]:00" or "40:00" -> 40.0
@@ -114,13 +138,18 @@ def parse_hours_cell(val: Any) -> float:
     # 4. Numeric float or int
     if isinstance(val, (int, float)):
         fval = float(val)
+        # Excel fraction of day (e.g. 0.267361 for 6h26m, 0.5 for 12h)
+        if 0.0 < fval < 1.0:
+            converted = fval * 24.0
+            if 0 < converted <= 50:
+                return round(converted, 2)
         if 0 < fval <= 50:
             return round(fval, 2)
         return 0.0
 
     # 5. String parsing
     val_str = str(val).strip()
-    if not val_str:
+    if not val_str or val_str in ["-", ".", "nan", "NaN", "None"]:
         return 0.0
 
     # Discard pure date strings (e.g. "01/03/2024", "2024-03-01", "01-03-2024")
@@ -148,12 +177,16 @@ def parse_hours_cell(val: Any) -> float:
         except Exception:
             pass
 
-    # Generic number extraction at start of string (e.g. "44", "44.5", "44,5")
+    # Generic number extraction at start of string (e.g. "44", "44.5", "44,5", "0.267361")
     num_match = re.search(r"^\s*(\d+(?:[.,]\d+)?)", val_str)
     if num_match:
         num_str = num_match.group(1).replace(",", ".")
         try:
             h = float(num_str)
+            if 0.0 < h < 1.0:
+                converted = h * 24.0
+                if 0 < converted <= 50:
+                    return round(converted, 2)
             if 0 < h <= 50:
                 return round(h, 2)
         except Exception:
@@ -341,25 +374,29 @@ class SchoolDataExtractor:
         for idx, h in enumerate(headers):
             if not h:
                 continue
-            if col_nombres == -1 and any(k in h for k in ["nombre", "docente", "profesor", "funcionario", "apellidos", "personal"]):
+            if col_nombres == -1 and any(k in h for k in ["nombre", "docente", "profesor", "funcionario", "apellidos", "personal", "nombres"]):
                 col_nombres = idx
             elif col_run == -1 and any(k in h for k in ["run", "rut", "cedula", "identificacion"]):
                 col_run = idx
-            elif any(k in h for k in ["horas contrato", "hrs contrato", "hrs. contrato", "total horas contrato", "total hrs contrato", "total contrato"]):
+            elif col_contrato == -1 and any(k in h for k in [
+                "horas contrato", "hrs contrato", "hrs. contrato", "total horas contrato",
+                "total hrs contrato", "total contrato", "horas totales", "total horas",
+                "horas semanales", "total carga horaria"
+            ]):
                 col_contrato = idx
-            elif "total ha" in h or "horas aula" in h:
+            elif col_total_ha == -1 and ("total ha" in h or "horas aula" in h):
                 col_total_ha = idx
-            elif "sub. gral" in h or "sub gral" in h or "titulares sub gral" in h:
+            elif col_sub_gral == -1 and (("total hc" in h and "gral" in h) or "hc sub. gral" in h or "hc sub gral" in h or (("sub. gral" in h or "sub gral" in h) and "titular" not in h and "contrata" not in h)):
                 col_sub_gral = idx
-            elif "sub. sep" in h or "sub sep" in h or "titulares sep" in h:
+            elif col_sub_sep == -1 and (("total hc" in h and "sep" in h) or "hc sub. sep" in h or "hc sub sep" in h or (("sub. sep" in h or "sub sep" in h) and "titular" not in h and "contrata" not in h)):
                 col_sub_sep = idx
-            elif "sub. pie" in h or "sub pie" in h or "titulares pie" in h:
+            elif col_sub_pie == -1 and (("total hc" in h and "pie" in h) or "hc sub. pie" in h or "hc sub pie" in h or (("sub. pie" in h or "sub pie" in h) and "titular" not in h and "contrata" not in h)):
                 col_sub_pie = idx
-            elif "total hc" in h or "total hrs" in h or "total horas" in h or "total cronologicas" in h:
+            elif col_total_hc == -1 and (h == "total hc" or "total hc" in h or "total cronologicas" in h or "total cronológicas" in h or "horas cronologicas" in h or "horas cronológicas" in h):
                 col_total_hc = idx
             elif col_actividad == -1 and any(k in h for k in ["asignatura", "cargo", "funcion", "función", "actividad", "rol", "especialidad", "materia", "descripcion", "descripción"]):
                 col_actividad = idx
-            elif col_horas_simple == -1 and any(k in h for k in ["horas asignadas", "horas lectivas", "jornada", "hora", "hrs"]):
+            elif col_horas_simple == -1 and any(k in h for k in ["horas asignadas", "horas lectivas", "jornada", "horas", "hora", "hrs"]):
                 col_horas_simple = idx
 
         if col_nombres == -1:
@@ -377,7 +414,7 @@ class SchoolDataExtractor:
                 act_raw = clean_str(df.iat[r, col_actividad]) if col_actividad != -1 and col_actividad < df.shape[1] else ""
 
                 row_str_lower = " ".join([clean_str(df.iat[r, c]).lower() for c in range(min(5, df.shape[1]))])
-                if any(row_str_lower.startswith(k) for k in ["total general", "resumen general", "subtotal general", "promedio general"]):
+                if is_summary_or_total_label(row_str_lower) or is_summary_or_total_label(nombre_raw):
                     continue
 
                 if is_rut(nombre_raw) and not is_rut(run_raw):
@@ -387,9 +424,9 @@ class SchoolDataExtractor:
                 h_simple = parse_hours_cell(df.iat[r, col_horas_simple]) if col_horas_simple != -1 and col_horas_simple < df.shape[1] else 0.0
                 tot_hc = parse_hours_cell(df.iat[r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
 
-                if nombre_raw and not nombre_raw.lower().startswith(("total", "subtotal", "promedio")):
+                if nombre_raw and not is_summary_or_total_label(nombre_raw):
                     current_teacher = nombre_raw
-                if run_raw and is_rut(run_raw):
+                if run_raw:
                     current_rut = run_raw.replace(",", ".").replace(" ", "")
                 if contrato_num > 0:
                     current_contract = contrato_num
@@ -397,13 +434,19 @@ class SchoolDataExtractor:
                     current_contract = tot_hc
 
                 act_h = h_simple if h_simple > 0 else (tot_hc if tot_hc > 0 else contrato_num)
-                if act_raw and act_h > 0 and current_teacher:
+                
+                # Never omit a teacher: fallback activity if blank
+                clean_tname, role_in_name = extract_role_from_name(current_teacher)
+                final_act = act_raw or role_in_name or "Docencia de Aula"
+
+                if current_teacher and (act_h > 0 or current_contract > 0):
+                    effective_h = act_h if act_h > 0 else current_contract
                     self.teachers_data.append({
-                        "teacher_name": current_teacher,
+                        "teacher_name": clean_tname,
                         "rut": current_rut,
-                        "activity": act_raw,
-                        "hours": round(act_h, 2),
-                        "total_declared": current_contract or act_h
+                        "activity": final_act,
+                        "hours": round(effective_h, 2),
+                        "total_declared": current_contract or effective_h
                     })
             return
 
@@ -416,15 +459,27 @@ class SchoolDataExtractor:
             c2 = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
 
             # Check section headers
-            if not c2 and c1 and any(k in c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]):
+            if not c2 and c1 and any(k in c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(c1):
                 current_section = c1.upper()
+                r += 1
+                continue
+
+            if is_summary_or_total_label(c1):
                 r += 1
                 continue
 
             has_run = is_rut(c2) if col_run != -1 else False
             contrato_num = parse_hours_cell(df.iat[r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
+            
+            # Check any hours in master row
+            h_gral_master = parse_hours_cell(df.iat[r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
+            h_sep_master = parse_hours_cell(df.iat[r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
+            h_pie_master = parse_hours_cell(df.iat[r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
+            tot_hc_master = parse_hours_cell(df.iat[r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
+            any_master_h = (contrato_num > 0 or h_gral_master > 0 or h_sep_master > 0 or h_pie_master > 0 or tot_hc_master > 0)
 
-            if not has_run and (col_run != -1 or not c1 or c1.lower().startswith(("total", "subtotal", "promedio", "resumen", "slep"))):
+            is_valid_teacher = has_run or (looks_like_teacher_name(c1) and (any_master_h or c1 != ""))
+            if not is_valid_teacher:
                 r += 1
                 continue
 
@@ -439,11 +494,18 @@ class SchoolDataExtractor:
                 sub_c1 = clean_str(df.iat[sub_r, col_nombres])
                 sub_c2 = clean_str(df.iat[sub_r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
 
+                # Stop if next row is a new teacher with RUN
                 if col_run != -1 and is_rut(sub_c2):
                     break
-                if not sub_c2 and sub_c1 and any(k in sub_c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]):
+                # Stop if next row is a new teacher by name and has contract/hours
+                sub_contrato = parse_hours_cell(df.iat[sub_r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
+                if looks_like_teacher_name(sub_c1) and sub_contrato > 0:
                     break
-                if sub_c1.lower().startswith(("total", "subtotal")):
+                # Stop if section header
+                if not sub_c2 and sub_c1 and any(k in sub_c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]) and not looks_like_teacher_name(sub_c1):
+                    break
+                # Stop if summary row (do NOT add as activity)
+                if is_summary_or_total_label(sub_c1):
                     sub_r += 1
                     break
 
@@ -493,13 +555,14 @@ class SchoolDataExtractor:
                     if h_row == 0.0 and col_total_hc != -1 and col_total_hc < df.shape[1]:
                         h_row = parse_hours_cell(df.iat[r, col_total_hc])
 
-                if h_row > 0:
+                if h_row > 0 or contrato_num > 0:
+                    effective_h = h_row if h_row > 0 else contrato_num
                     self.teachers_data.append({
                         "teacher_name": teacher_name,
                         "rut": teacher_rut,
                         "activity": act_name,
-                        "hours": round(h_row, 2),
-                        "total_declared": contrato_num or h_row
+                        "hours": round(effective_h, 2),
+                        "total_declared": contrato_num or effective_h
                     })
 
             r = sub_r
@@ -507,3 +570,4 @@ class SchoolDataExtractor:
 def parse_excel_file(file_input: Union[str, bytes, io.BytesIO], filename: str) -> Dict[str, Any]:
     extractor = SchoolDataExtractor(file_input, filename)
     return extractor.parse()
+

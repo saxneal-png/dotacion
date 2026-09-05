@@ -283,15 +283,25 @@ def process_file_data(file_input, filename: str, api_key: Optional[str] = None, 
 
     tot_ee = h_aula + h_dir + h_tec
     
+    # Calculate unique teachers count and deduplicated declared contract hours
+    unique_teacher_contracts = {}
+    for t in teachers:
+        t_key = t.get("rut") or t.get("teacher_name") or "unknown"
+        decl = float(t.get("total_declared") or t.get("hours", 0.0))
+        if t_key not in unique_teacher_contracts or decl > unique_teacher_contracts[t_key]:
+            unique_teacher_contracts[t_key] = decl
+
+    declared_contract_sum = sum(unique_teacher_contracts.values())
+    unique_teachers_count = len([k for k in unique_teacher_contracts if k != "unknown"]) or len(teachers)
+
     # Discrepancy validation
     has_discrepancy = False
     discrepancy_note = ""
 
     calc_sum = round(h_aula + h_dir + h_tec, 2)
-    tot_rounded = round(tot_ee, 2)
-    if abs(calc_sum - tot_rounded) > 0.05:
+    if declared_contract_sum > 0 and abs(calc_sum - declared_contract_sum) > 1.0:
         has_discrepancy = True
-        discrepancy_note = f"Descuadre aritmético interno: suma ({calc_sum}) != total ({tot_rounded})"
+        discrepancy_note = f"Diferencia entre horas calculadas ({calc_sum:.1f}h) y contrato consolidado ({declared_contract_sum:.1f}h)"
 
     school_summary = {
         "rbd": parsed["rbd"],
@@ -301,7 +311,7 @@ def process_file_data(file_input, filename: str, api_key: Optional[str] = None, 
         "horas_directivas": round(h_dir, 1),
         "horas_tecnicas": round(h_tec, 1),
         "total_horas_ee": round(tot_ee, 1),
-        "teachers_count": len(teachers),
+        "teachers_count": unique_teachers_count,
         "has_discrepancy": has_discrepancy,
         "discrepancy_note": discrepancy_note,
         "source_file": filename

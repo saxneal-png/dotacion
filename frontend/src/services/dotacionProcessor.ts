@@ -1,4 +1,4 @@
-﻿import { parseExcelBrowser } from './excelParser';
+import { parseExcelBrowser } from './excelParser';
 import { classifyActivitiesHybrid } from './classifier';
 import type { SchoolSummary, TeacherRecord, KpiStats, ConsolidatedResponse } from '../types';
 
@@ -69,8 +69,17 @@ export async function processDotacionFilesClient(
       let hasDiscrepancy = false;
       let discrepancyNote = '';
 
-      // Comparar con horas contractuales totales declaradas si existen
-      const declaredSum = parsed.teachers.reduce((acc, t) => acc + (t.total_declared || 0), 0);
+      // Comparar con horas contractuales totales declaradas deduplicadas por docente único
+      const teacherContractMap = new Map<string, number>();
+      parsed.teachers.forEach((t) => {
+        const key = t.rut || t.teacher_name || 'unknown';
+        const decl = t.total_declared || t.hours || 0;
+        if (!teacherContractMap.has(key) || decl > (teacherContractMap.get(key) || 0)) {
+          teacherContractMap.set(key, decl);
+        }
+      });
+      const declaredSum = Array.from(teacherContractMap.values()).reduce((acc, val) => acc + val, 0);
+
       if (declaredSum > 0 && Math.abs(declaredSum - totalEE) > 1.0) {
         hasDiscrepancy = true;
         discrepancyNote = `Descuadre: Suma calculada (${totalEE}h) vs Contrato (${Math.round(declaredSum)}h)`;
