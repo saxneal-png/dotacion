@@ -11,23 +11,24 @@ Debes analizar detalladamente la estructura de las planillas que varía de una a
 considera además que las horas de recreo, 65/35, 60/40 y similares son horas "aula" ya que son las proporciones correspondientes según las tablas oficiales de Mineduc
 Debes clasificar cada una de las siguientes funciones, asignaturas o cargos escolares en exactamente UNA de estas 3 categorías oficiales:
 
-1. "AULA" (Frente a estudiantes / Atención pedagógica directa):
-   - Lenguaje, Matemática, Inglés, Historia, Ciencias Naturales, Biología, Física, Química, Artes, Música, Tecnología, Educación Física, Religión, Filosofía, Orientación
+1. "AULA" (Frente a estudiantes / Atención pedagógica directa y proporciones oficiales Mineduc):
+   - Lenguaje, Matemática, Inglés, Historia, Ciencias Naturales, Biología, Física, Química, Artes, Música, Tecnología, Educación Física, Religión, Filosofía, Orientación.
    - Formación Ciudadana, Educación Ciudadana, Ciencias para la Ciudadanía.
    - Orientación cuando se imparte a estudiantes.
    - Talleres JEC, Talleres SEP, Talleres Extraescolares, AELE, Extensión Horaria.
    - Aula Común, Aula de Recursos, Atención PIE en aula, Codocencia, Monitoreo de cursos.
-   - Profesor jefe con horas frente a estudiantes. -Recreos, Recreos 60/40, Recreos 65/35, Horas no lectivas 60/40, Horas no lectivas 65/35,
-   - Regla de Oro: Toda actividad donde exista atención pedagógica directa de estudiantes debe clasificarse como AULA.
+   - Profesor jefe con horas frente a estudiantes.
+   - Recreos, Recreos 60/40, Recreos 65/35, Horas no lectivas 60/40, Horas no lectivas 65/35 (proporciones de aula según tablas Mineduc).
+   - Regla de Oro: Toda actividad donde exista atención pedagógica directa de estudiantes o proporción lectiva Mineduc (recreos, 65/35, 60/40) debe clasificarse como AULA.
 
 2. "TECNICA" (Gestión pedagógica no docente y apoyos):
    - Coordinación PIE, Trabajo Colaborativo PIE, Encargado(a) CRA, Coordinación CRA, Enlaces, Coordinación Enlaces/TIC.
    - Apoyo UTP, Apoyo Técnico, Orientador(a), Orientadora/orientador, Jefe UTP, Jefa UTP, Dirección, Equipo Directivo, Rector, Rectora.
    - Coordinación de ciclo, coordinación de departamento, coordinación matemática, coordinación lenguaje, coordinación convivencia escolar, coordinación extraescolar, coordinación medio ambiente, coordinación EPJA.
    - Encargado(a) SEP, Encargado(a) PIAE, Curriculista, Sala de Recursos.
-   - Apoyo Técnico Administrativo, Encargado de informática, Planificación, Horas no lectivas, Comunidades CAP.
-   -  Funciones no lectivas art 69.
-   - Regla de Oro: Toda actividad fuera del aula y que no sea directiva debe ser considerada técnica.
+   - Apoyo Técnico Administrativo, Encargado de informática, Planificación, Comunidades CAP.
+   - Funciones no lectivas art 69.
+   - Regla de Oro: Toda actividad fuera del aula que no sea directiva ni proporción lectiva debe ser considerada técnica.
 
 3. "DIRECTIVA" (Liderazgo y dirección institucional):
    - Director, Directora, Encargado de Escuela, Inspector General, Inspectora General, Subdirector, Subdirectora.
