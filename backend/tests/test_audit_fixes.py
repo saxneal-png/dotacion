@@ -24,6 +24,26 @@ class TestAuditFixes(unittest.TestCase):
         self.assertIsNotNone(res3)
         self.assertEqual(res3[0], "TECNICA")
 
+    def test_recreos_and_proportions_as_aula(self):
+        # Recreos and 65/35 - 60/40 must be classified as AULA per Mineduc proportion rule
+        for act in [
+            "Recreo",
+            "Recreos",
+            "Recreo 65/35",
+            "Recreos 65/35",
+            "Recreo 60/40",
+            "Horas No lectivas 65/35",
+            "Horas no lectivas 60/40"
+        ]:
+            res = classify_local(act)
+            self.assertIsNotNone(res, f"Failed for {act}")
+            self.assertEqual(res[0], "AULA", f"Expected AULA for {act}, got {res[0]}")
+
+        # Art. 69 must remain TECNICA
+        res_art69 = classify_local("Tiempo Funciones no lectivas (artº 69)")
+        self.assertIsNotNone(res_art69)
+        self.assertEqual(res_art69[0], "TECNICA")
+
     def test_orientacion_rules(self):
         # Plain "Orientación" must be AULA (classroom curriculum hour)
         res1 = classify_local("Orientación")

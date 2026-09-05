@@ -70,9 +70,9 @@ def test_hierarchical():
 
     print(f"\nResumen: Aula={h_aula:.2f}h, Técnica={h_tec:.2f}h, Directiva={h_dir:.2f}h, Total={h_aula+h_tec+h_dir:.2f}h")
 
-    assert h_aula == 15.0, f"Horas aula esperadas: 15.0, obtenidas: {h_aula}"
-    assert h_tec == 32.0, f"Horas técnicas esperadas: 32.0, obtenidas: {h_tec}"
-    assert h_dir == 0.0, f"Horas directivas esperadas: 0.0, obtenidas: {h_dir}"
+    assert round(h_aula, 2) == 23.0, f"Horas aula esperadas: 23.0, obtenidas: {h_aula}"
+    assert round(h_tec, 2) == 24.0, f"Horas técnicas esperadas: 24.0, obtenidas: {h_tec}"
+    assert round(h_dir, 2) == 0.0, f"Horas directivas esperadas: 0.0, obtenidas: {h_dir}"
     print("\n>>> ¡PRUEBA DE ESTRUCTURA JERÁRQUICA SLEP PASÓ CON 100% DE EXACTITUD! <<<")
 
 if __name__ == "__main__":
