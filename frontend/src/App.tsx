@@ -12,6 +12,11 @@ import { Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import { processDotacionFilesClient, recalculateSchoolTotals } from './services/dotacionProcessor';
 import { exportConsolidatedExcelBrowser, exportCsvBrowser } from './services/excelExporter';
 
+// Detect static hosting (GitHub Pages) — skip all backend API calls to avoid console 404/405 noise
+const IS_STATIC_HOST = typeof window !== 'undefined' &&
+  !window.location.hostname.includes('localhost') &&
+  !window.location.hostname.includes('127.0.0.1');
+
 const FALLBACK_MODELS: GeminiModel[] = [
   {
     id: "gemini-3.8-flash",
@@ -176,7 +181,7 @@ export function App() {
   useEffect(() => {
     const fetchInitial = async () => {
       // Intentar sincronizar con backend si está disponible y el cliente no tiene datos
-      if (schools.length === 0) {
+      if (!IS_STATIC_HOST && schools.length === 0) {
         try {
           const res = await fetch('/api/consolidated');
           if (res.ok) {
@@ -194,15 +199,17 @@ export function App() {
         } catch (e) {}
       }
 
-      try {
-        const resModel = await fetch('/api/model');
-        if (resModel.ok) {
-          const mData = await resModel.json();
-          if (mData.selected_model) {
-            setSelectedModel((prev) => prev || mData.selected_model);
+      if (!IS_STATIC_HOST) {
+        try {
+          const resModel = await fetch('/api/model');
+          if (resModel.ok) {
+            const mData = await resModel.json();
+            if (mData.selected_model) {
+              setSelectedModel((prev) => prev || mData.selected_model);
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
       // Si tenemos clave, mapear modelos silenciosamente
       if (apiKey && apiKey.length >= 10 && models.length === FALLBACK_MODELS.length) {
@@ -251,13 +258,15 @@ export function App() {
       } catch {}
 
       // 2. Envío silencioso al backend si está disponible (para auditoría o persistencia en servidor local)
-      try {
-        const formData = new FormData();
-        files.forEach((f) => formData.append('files', f));
-        if (apiKey) formData.append('gemini_api_key', apiKey);
-        if (selectedModel) formData.append('gemini_model', selectedModel);
-        fetch('/api/upload', { method: 'POST', body: formData }).catch(() => {});
-      } catch {}
+      if (!IS_STATIC_HOST) {
+        try {
+          const formData = new FormData();
+          files.forEach((f) => formData.append('files', f));
+          if (apiKey) formData.append('gemini_api_key', apiKey);
+          if (selectedModel) formData.append('gemini_model', selectedModel);
+          fetch('/api/upload', { method: 'POST', body: formData }).catch(() => {});
+        } catch {}
+      }
 
       setActiveTab('consolidated');
       showToast(`¡Se procesaron exitosamente ${clientResult.schools.length} establecimientos en tu navegador!`);
@@ -295,9 +304,11 @@ export function App() {
       localStorage.removeItem('dotacion_kpis');
       localStorage.removeItem('dotacion_classification_cache');
 
-      try {
-        await fetch('/api/clear', { method: 'POST' });
-      } catch {}
+      if (!IS_STATIC_HOST) {
+        try {
+          await fetch('/api/clear', { method: 'POST' });
+        } catch {}
+      }
 
       setActiveTab('upload');
       showToast('Datos limpiados. Listo para un nuevo análisis.');
@@ -335,22 +346,24 @@ export function App() {
           localStorage.setItem('dotacion_kpis', JSON.stringify(recalculated.kpis));
         } catch {}
 
-        try {
-          const targetTeacher = updated[teacherIndex];
-          fetch('/api/reclassify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              teacher_id: targetTeacher?.id,
-              rut: targetTeacher?.rut,
-              teacher_name: targetTeacher?.teacher_name,
-              activity: targetTeacher?.activity,
-              teacher_index: teacherIndex,
-              new_category: newCategory,
-              reason: 'Ajuste manual de usuario',
-            }),
-          }).catch(() => {});
-        } catch {}
+        if (!IS_STATIC_HOST) {
+          try {
+            const targetTeacher = updated[teacherIndex];
+            fetch('/api/reclassify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                teacher_id: targetTeacher?.id,
+                rut: targetTeacher?.rut,
+                teacher_name: targetTeacher?.teacher_name,
+                activity: targetTeacher?.activity,
+                teacher_index: teacherIndex,
+                new_category: newCategory,
+                reason: 'Ajuste manual de usuario',
+              }),
+            }).catch(() => {});
+          } catch {}
+        }
 
         showToast('Actividad reclasificada y totales actualizados.');
       }
