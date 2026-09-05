@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Search, BookOpen, Wrench, Shield, Edit2, Sparkles, CheckSquare, Square, ChevronDown } from 'lucide-react';
 import type { TeacherRecord, SchoolSummary } from '../types';
 
@@ -62,8 +62,10 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
       filteredTeachers.forEach((t, idx) => {
         const id = t.id || String(idx);
         if (selectedIds.has(id)) {
-          const originalIndex = teachers.findIndex((item) => item.id === t.id);
-          tasks.push({ originalIndex });
+          // Use object reference to reliably find the original index
+          // (findIndex by id fails when multiple teachers have undefined ids)
+          const originalIndex = teachers.indexOf(t);
+          if (originalIndex >= 0) tasks.push({ originalIndex });
         }
       });
       for (const task of tasks) {
@@ -144,7 +146,7 @@ export const TeacherDetailTable: React.FC<TeacherDetailTableProps> = ({
           <tbody className="divide-y divide-slate-100">
             {filteredTeachers.map((t, idx) => {
               const rowId = t.id || String(idx);
-              const originalIndex = teachers.findIndex((item) => item.id === t.id);
+              const originalIndex = teachers.indexOf(t);
               const isEditing = editingIndex === originalIndex;
               const isSelected = selectedIds.has(rowId);
               return (
