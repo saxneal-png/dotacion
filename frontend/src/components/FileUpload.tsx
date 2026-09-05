@@ -125,7 +125,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             <span>1. Horas Aula (Frente a Estudiantes)</span>
           </div>
           <p className="text-slate-600 leading-relaxed">
-            Asignaturas (Lenguaje, Matemática, Historia, Ciencias, etc.), Formación Ciudadana, talleres JEC/SEP, extraescolares, PIE en aula, codocencia, aula de recursos.
+            Asignaturas (Lenguaje, Matemática, Historia, Ciencias, etc.), Formación Ciudadana, talleres JEC/SEP, extraescolares, PIE en aula, codocencia, aula de recursos, recreos y proporciones lectivas (60/40, 65/35).
           </p>
         </div>
 
@@ -135,7 +135,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             <span>2. Horas Técnicas (Gestión y No Lectivas)</span>
           </div>
           <p className="text-slate-600 leading-relaxed">
-            Toda actividad fuera del aula que no sea directiva: Jefe(a) UTP, apoyo técnico, CRA, Enlaces/TIC, recreos (60/40, 65/35), horas no lectivas, comunidades CAP.
+            Toda actividad fuera del aula que no sea directiva ni proporción lectiva: Jefe(a) UTP, apoyo técnico, CRA, Enlaces/TIC, funciones no lectivas Art. 69, comunidades CAP.
           </p>
         </div>
 

@@ -1,4 +1,4 @@
-﻿# 🤠 Dotación Uyuy!! - Analizador de Dotación Docente SLEP
+# 🤠 Dotación Uyuy!! - Analizador de Dotación Docente SLEP
 
 Aplicación web profesional diseñada para los **Servicios Locales de Educación Pública (SLEP)**. Procesa de manera automatizada planillas de dotación escolar (`.xlsx`, `.xls`, `.csv`), interpreta funciones y cargos mediante un motor híbrido inteligente (**Reglas del Estatuto Docente Chileno + Google Gemini AI**), clasifica las horas pedagógicas en **Aula**, **Técnicas** y **Directivas**, y genera el informe consolidado oficial.
 
@@ -46,19 +46,19 @@ Cada usuario o colega debe utilizar su propia clave de API gratuita de Google Ge
 
 El motor clasifica cada función bajo las directrices estrictas del sistema educativo público:
 
-1. **AULA (Atención Pedagógica Directa)**:
+1. **AULA (Atención Pedagógica Directa y Proporciones Mineduc)**:
    - Docencia frente a alumnos: Lenguaje, Matemática, Historia, Ciencias, Inglés, Artes, Música, Educación Física, Religión, Filosofía, etc.
    - Formación Ciudadana, Talleres JEC, Talleres SEP, Talleres Extraescolares.
    - Aula Común, Aula de Recursos, Atención PIE en aula, Codocencia.
-   - *Regla de Oro: Toda actividad con presencia física y atención pedagógica directa a estudiantes.*
+   - Recreos (60/40 y 65/35), Horas no lectivas proporcionales (60/40 y 65/35).
+   - *Regla de Oro: Toda actividad con presencia física y atención pedagógica directa a estudiantes o proporción lectiva legal Mineduc.*
 
 2. **TÉCNICA (Gestión Pedagógica y Apoyos)**:
    - Jefe(a) UTP, Apoyo UTP, Orientador(a) Institucional, Dirección / Equipo Directivo, Rector(a).
    - Encargado(a) CRA, Coordinación CRA, Enlaces / TIC.
    - Coordinación PIE, Trabajo Colaborativo PIE.
-   - Recreos (60/40 y 65/35), Horas no lectivas (60/40 y 65/35).
    - Funciones no lectivas Art. 69, Planificación, Curriculista, Convivencia Escolar.
-   - *Regla de Oro: Toda actividad fuera del aula que NO sea directiva es TÉCNICA.*
+   - *Regla de Oro: Toda actividad fuera del aula que NO sea directiva ni proporción lectiva es TÉCNICA.*
 
 3. **DIRECTIVA (Liderazgo Escolar Superior)**:
    - **Exclusivamente**: Director(a), Subdirector(a), Inspector(a) General y Encargado(a) de Escuela.
