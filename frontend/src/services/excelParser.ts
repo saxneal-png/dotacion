@@ -47,6 +47,16 @@ export function looksLikeTeacherName(s: string): boolean {
   return sClean.split(/\s+/).length >= 2;
 }
 
+export function extractRoleFromName(name: string): { cleanName: string; role: string } {
+  const m = name.match(/\(([^)]+)\)/);
+  if (m) {
+    const role = m[1].trim();
+    const cleanName = name.replace(/\s*\([^)]+\)/, '').trim();
+    return { cleanName, role };
+  }
+  return { cleanName: name.trim(), role: '' };
+}
+
 /**
  * Convierte cualquier valor de celda (decimal, texto, h:mm o [h]:mm) a horas cronológicas exactas.
  */
@@ -108,7 +118,6 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
     raw: false,
   });
 
-  // Buscar la hoja más adecuada (priorizando nombres como dotacion, planilla, horas)
   let sheetName = workbook.SheetNames[0];
   for (const name of workbook.SheetNames) {
     const lower = name.toLowerCase();
@@ -123,7 +132,6 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
     throw new Error(`No se pudo leer la hoja en ${file.name}`);
   }
 
-  // Convertir a matriz bidimensional de strings limpios
   const data: string[][] = XLSX.utils.sheet_to_json(sheet, {
     header: 1,
     defval: '',
@@ -135,9 +143,8 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
   let matricula = 0;
   let headerRowIdx = -1;
 
-  const maxRows = Math.min(data.length, 30);
+  const maxRows = Math.min(data.length, 50);
 
-  // 1. Escanear metadatos (RBD, Establecimiento, Matrícula) en las primeras filas
   for (let r = 0; r < maxRows; r++) {
     const row = data[r] || [];
     const rowText = row.slice(0, 15).map(cleanStr).join(' ');
@@ -171,13 +178,11 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
       }
     }
 
-    // Buscar encabezados de la tabla docente
     const rowLower = row.map((c) => cleanStr(c).toLowerCase()).join(' ');
-    const hasDocente = ['docente', 'nombre', 'profesor', 'funcionario', 'run', 'rut'].some((k) => rowLower.includes(k));
-    const hasHoras = ['hora', 'hrs', 'asignatura', 'cargo', 'total ha', 'total hc'].some((k) => rowLower.includes(k));
-    if (hasDocente && hasHoras) {
+    const hasDocente = ['docente', 'nombre', 'profesor', 'funcionario', 'run', 'rut', 'personal'].some((k) => rowLower.includes(k));
+    const hasHoras = ['hora', 'hrs', 'asignatura', 'cargo', 'total ha', 'total hc', 'funcion', 'jornada', 'actividad', 'especialidad'].some((k) => rowLower.includes(k));
+    if (hasDocente && hasHoras && headerRowIdx === -1) {
       headerRowIdx = r;
-      break;
     }
   }
 
@@ -193,7 +198,6 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
 
   if (headerRowIdx === -1) headerRowIdx = 0;
 
-  // Fallbacks para metadatos si no se encontraron en las celdas
   if (!rbd) {
     const filenameRbd = file.name.match(/\b(\d{4,6})\b/);
     rbd = filenameRbd ? filenameRbd[1] : 'S/RBD';
@@ -205,7 +209,6 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
     establishment = cleanName.replace(/^[ -_]+|[ -_]+$/g, '').toUpperCase() || 'ESTABLECIMIENTO SIN NOMBRE';
   }
 
-  // 2. Mapear columnas de la fila de encabezado (con soporte para encabezados combinados multinivel)
   const headersRow1 = (data[headerRowIdx] || []).map((c) => cleanStr(c).toLowerCase());
   let hasSubHeader = false;
   let headersRow2: string[] = [];
@@ -275,103 +278,174 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
   if (colNombres === -1) colNombres = 0;
 
   const teachersData: ParsedSchoolData['teachers'] = [];
-  let currentTeacher = '';
-  let currentRut = '';
-  let currentContract = 0.0;
 
-  for (let r = dataStartIdx; r < data.length; r++) {
-    const row = data[r] || [];
-    let nombreRaw = colNombres !== -1 && colNombres < row.length ? cleanStr(row[colNombres]) : '';
-    let runRaw = colRun !== -1 && colRun < row.length ? cleanStr(row[colRun]) : '';
-    const actRaw = colActividad !== -1 && colActividad < row.length ? cleanStr(row[colActividad]) : '';
+  // CASE 1: Flat / Standard spreadsheet (explicit activity column)
+  if (colActividad !== -1 && (colHorasSimple !== -1 || colContrato !== -1 || colTotalHc !== -1)) {
+    let currentTeacher = '';
+    let currentRut = '';
+    let currentContract = 0.0;
 
-    const rowStrLower = row.slice(0, 5).map(cleanStr).join(' ').toLowerCase();
-    if (['total general', 'resumen general', 'subtotal general', 'promedio general'].some((k) => rowStrLower.startsWith(k))) {
-      continue;
-    }
+    for (let r = dataStartIdx; r < data.length; r++) {
+      const row = data[r] || [];
+      let nombreRaw = colNombres !== -1 && colNombres < row.length ? cleanStr(row[colNombres]) : '';
+      let runRaw = colRun !== -1 && colRun < row.length ? cleanStr(row[colRun]) : '';
+      const actRaw = colActividad !== -1 && colActividad < row.length ? cleanStr(row[colActividad]) : '';
 
-    if (isRut(nombreRaw) && !isRut(runRaw) && looksLikeTeacherName(runRaw)) {
-      const temp = nombreRaw;
-      nombreRaw = runRaw;
-      runRaw = temp;
-    }
+      const rowStrLower = row.slice(0, 5).map(cleanStr).join(' ').toLowerCase();
+      if (['total general', 'resumen general', 'subtotal general', 'promedio general'].some((k) => rowStrLower.startsWith(k))) {
+        continue;
+      }
 
-    const contratoNum = colContrato !== -1 && colContrato < row.length ? parseHoursCell(row[colContrato]) : 0.0;
-    const hSimple = colHorasSimple !== -1 && colHorasSimple < row.length ? parseHoursCell(row[colHorasSimple]) : 0.0;
+      if (isRut(nombreRaw) && !isRut(runRaw)) {
+        nombreRaw = runRaw;
+        runRaw = cleanStr(row[colNombres]);
+      }
 
-    const hGral = colSubGral !== -1 && colSubGral < row.length ? parseHoursCell(row[colSubGral]) : 0.0;
-    const hSep = colSubSep !== -1 && colSubSep < row.length ? parseHoursCell(row[colSubSep]) : 0.0;
-    const hPie = colSubPie !== -1 && colSubPie < row.length ? parseHoursCell(row[colSubPie]) : 0.0;
-    const totHc = colTotalHc !== -1 && colTotalHc < row.length ? parseHoursCell(row[colTotalHc]) : 0.0;
-    const totHa = colTotalHa !== -1 && colTotalHa < row.length ? parseHoursCell(row[colTotalHa]) : 0.0;
+      const contratoNum = colContrato !== -1 && colContrato < row.length ? parseHoursCell(row[colContrato]) : 0.0;
+      const hSimple = colHorasSimple !== -1 && colHorasSimple < row.length ? parseHoursCell(row[colHorasSimple]) : 0.0;
+      const totHc = colTotalHc !== -1 && colTotalHc < row.length ? parseHoursCell(row[colTotalHc]) : 0.0;
 
-    let subHours = hGral + hSep + hPie;
-    if (subHours === 0.0 && totHc > 0.0) {
-      subHours = totHc;
-    }
-    if (subHours === 0.0 && totHa > 0.0) {
-      subHours = (totHa * 45.0) / 60.0;
-    }
-
-    const hasNewRun = isRut(runRaw);
-    const hasTeacherName = looksLikeTeacherName(nombreRaw);
-
-    if (hasNewRun || (hasTeacherName && nombreRaw !== currentTeacher)) {
-      if (hasTeacherName) {
-        currentTeacher = nombreRaw;
-      } else if (!currentTeacher && nombreRaw) {
+      if (nombreRaw && !nombreRaw.toLowerCase().startsWith('total') && !nombreRaw.toLowerCase().startsWith('subtotal')) {
         currentTeacher = nombreRaw;
       }
-      if (runRaw) {
-        currentRut = runRaw;
+      if (runRaw && isRut(runRaw)) {
+        currentRut = runRaw.replace(',', '.').replace(/\s+/g, '');
       }
       if (contratoNum > 0) {
         currentContract = contratoNum;
-      } else if (totHc > 0 && colContrato === -1) {
+      } else if (totHc > 0) {
         currentContract = totHc;
       }
-    }
 
-    // Prioridad 1: Columna de actividad presente
-    if (actRaw && (hSimple > 0 || subHours > 0 || contratoNum > 0)) {
-      const actHours = hSimple > 0 ? hSimple : subHours > 0 ? subHours : contratoNum;
-      teachersData.push({
-        teacher_name: currentTeacher || nombreRaw,
-        rut: currentRut || runRaw,
-        activity: actRaw,
-        hours: Math.round(actHours * 100) / 100,
-        total_declared: currentContract > 0 ? currentContract : actHours,
-      });
-      continue;
-    }
-
-    // Prioridad 2: Jerárquico SLEP (actividad en colNombres)
-    if (currentTeacher && nombreRaw && !hasNewRun && subHours > 0) {
-      const nLower = nombreRaw.toLowerCase();
-      if (!nLower.startsWith('total') && !nLower.startsWith('subtotal') && !nLower.includes('promedio')) {
+      const actH = hSimple > 0 ? hSimple : totHc > 0 ? totHc : contratoNum;
+      if (actRaw && actH > 0 && currentTeacher) {
         teachersData.push({
           teacher_name: currentTeacher,
           rut: currentRut,
-          activity: nombreRaw,
-          hours: Math.round(subHours * 100) / 100,
-          total_declared: currentContract > 0 ? currentContract : subHours,
+          activity: actRaw,
+          hours: Math.round(actH * 100) / 100,
+          total_declared: currentContract > 0 ? currentContract : actH,
         });
-        continue;
       }
     }
 
-    // Prioridad 3: Plano sin columna de actividad
-    if ((currentTeacher || nombreRaw) && (hSimple > 0 || contratoNum > 0) && !actRaw && !subHours) {
-      const actHours = hSimple > 0 ? hSimple : contratoNum;
-      teachersData.push({
-        teacher_name: currentTeacher || nombreRaw,
-        rut: currentRut || runRaw,
-        activity: 'Docencia de Aula',
-        hours: Math.round(actHours * 100) / 100,
-        total_declared: currentContract > 0 ? currentContract : actHours,
-      });
+    return {
+      rbd,
+      establishment,
+      matricula,
+      teachers: teachersData,
+    };
+  }
+
+  // CASE 2: SLEP Hierarchical spreadsheet (activities in sub-rows under colNombres)
+  let r = dataStartIdx;
+  let currentSection = '';
+
+  while (r < data.length) {
+    const row = data[r] || [];
+    const c1 = cleanStr(row[colNombres]);
+    const c2 = colRun !== -1 && colRun < row.length ? cleanStr(row[colRun]) : '';
+
+    if (!c2 && c1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'ASISTENTES', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => c1.toUpperCase().includes(k))) {
+      currentSection = c1.toUpperCase();
+      r++;
       continue;
     }
+
+    const hasRun = colRun !== -1 ? isRut(c2) : false;
+    const contratoNum = colContrato !== -1 && colContrato < row.length ? parseHoursCell(row[colContrato]) : 0.0;
+
+    if (!hasRun && (colRun !== -1 || !c1 || ['total', 'subtotal', 'promedio', 'resumen', 'slep'].some((k) => c1.toLowerCase().startsWith(k)))) {
+      r++;
+      continue;
+    }
+
+    const { cleanName: teacherName, role: roleInName } = extractRoleFromName(c1);
+    const teacherRut = c2 ? c2.replace(',', '.').replace(/\s+/g, '') : '';
+
+    const subRows: Array<{ name: string; hours: number }> = [];
+    let subR = r + 1;
+
+    while (subR < data.length) {
+      const subRow = data[subR] || [];
+      const subC1 = cleanStr(subRow[colNombres]);
+      const subC2 = colRun !== -1 && colRun < subRow.length ? cleanStr(subRow[colRun]) : '';
+
+      if (colRun !== -1 && isRut(subC2)) {
+        break;
+      }
+      if (!subC2 && subC1 && ['PIE', 'CO DOCENTES', 'EQUIPO GESTIÓN', 'SIMBOLOGÍA', 'RESUMEN'].some((k) => subC1.toUpperCase().includes(k))) {
+        break;
+      }
+      if (subC1.toLowerCase().startsWith('total') || subC1.toLowerCase().startsWith('subtotal')) {
+        subR++;
+        break;
+      }
+
+      if (subC1) {
+        const hGral = colSubGral !== -1 && colSubGral < subRow.length ? parseHoursCell(subRow[colSubGral]) : 0.0;
+        const hSep = colSubSep !== -1 && colSubSep < subRow.length ? parseHoursCell(subRow[colSubSep]) : 0.0;
+        const hPie = colSubPie !== -1 && colSubPie < subRow.length ? parseHoursCell(subRow[colSubPie]) : 0.0;
+        const totHc = colTotalHc !== -1 && colTotalHc < subRow.length ? parseHoursCell(subRow[colTotalHc]) : 0.0;
+        const totHa = colTotalHa !== -1 && colTotalHa < subRow.length ? parseHoursCell(subRow[colTotalHa]) : 0.0;
+
+        let h = hGral + hSep + hPie;
+        if (h === 0.0 && totHc > 0.0) h = totHc;
+        if (h === 0.0 && totHa > 0.0) h = (totHa * 45.0) / 60.0;
+
+        if (h > 0) {
+          subRows.push({ name: subC1, hours: Math.round(h * 100) / 100 });
+        }
+      }
+
+      subR++;
+    }
+
+    if (subRows.length > 0) {
+      for (const item of subRows) {
+        teachersData.push({
+          teacher_name: teacherName,
+          rut: teacherRut,
+          activity: item.name,
+          hours: item.hours,
+          total_declared: contratoNum > 0 ? contratoNum : item.hours,
+        });
+      }
+    } else {
+      let actName = roleInName;
+      if (!actName) {
+        if (currentSection.includes('PIE') || (colSubPie !== -1 && colSubPie < row.length && parseHoursCell(row[colSubPie]) > 0)) {
+          actName = 'Docente PIE';
+        } else if (currentSection.includes('CO DOCENTE')) {
+          actName = 'Co-docente';
+        } else {
+          actName = 'Docencia de Aula';
+        }
+      }
+
+      let hRow = contratoNum;
+      if (hRow === 0.0) {
+        const hGral = colSubGral !== -1 && colSubGral < row.length ? parseHoursCell(row[colSubGral]) : 0.0;
+        const hSep = colSubSep !== -1 && colSubSep < row.length ? parseHoursCell(row[colSubSep]) : 0.0;
+        const hPie = colSubPie !== -1 && colSubPie < row.length ? parseHoursCell(row[colSubPie]) : 0.0;
+        hRow = hGral + hSep + hPie;
+        if (hRow === 0.0 && colTotalHc !== -1 && colTotalHc < row.length) {
+          hRow = parseHoursCell(row[colTotalHc]);
+        }
+      }
+
+      if (hRow > 0) {
+        teachersData.push({
+          teacher_name: teacherName,
+          rut: teacherRut,
+          activity: actName,
+          hours: Math.round(hRow * 100) / 100,
+          total_declared: contratoNum > 0 ? contratoNum : hRow,
+        });
+      }
+    }
+
+    r = subR;
   }
 
   return {

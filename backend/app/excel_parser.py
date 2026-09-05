@@ -14,19 +14,33 @@ def is_rut(val: Any) -> bool:
     """
     Validates if a string looks like a Chilean RUN/RUT:
     - 12.345.678-9, 12345678-9, 12345678-k
+    - 16,496,711-5 (common comma formatting in Excel)
     - 12345678k, 12.345.678k
     - Numeric integer of 7 to 9 digits (common in Excel RUN columns)
     """
     s = clean_str(val)
     if not s:
         return False
-    if re.search(r"\b\d{1,2}\.?\d{3}\.?\d{3}[-‐][0-9kK]\b", s):
+    s_clean = s.replace(",", ".").replace(" ", "")
+    if re.search(r"\b\d{1,2}\.?\d{3}\.?\d{3}[-‐][0-9kK]\b", s_clean):
         return True
-    if re.search(r"\b\d{7,8}[kK]\b", s):
+    if re.search(r"\b\d{7,8}[-‐]?[kK]\b", s_clean):
         return True
-    if re.fullmatch(r"\d{7,9}", s):
+    if re.fullmatch(r"\d{7,9}", s_clean):
         return True
     return False
+
+def extract_role_from_name(name: str) -> Tuple[str, str]:
+    """
+    Extracts function/role written in parentheses in teacher name:
+    e.g. 'FERRADA VENEGAS ROBERTO ANDRÉS (DIRECTOR)' -> ('FERRADA VENEGAS ROBERTO ANDRÉS', 'Director')
+    """
+    m = re.search(r"\(([^)]+)\)", name)
+    if m:
+        role = m.group(1).strip().title()
+        clean_name = re.sub(r"\s*\([^)]+\)", "", name).strip()
+        return clean_name, role
+    return name.strip(), ""
 
 def looks_like_teacher_name(s: str) -> bool:
     """
@@ -351,91 +365,144 @@ class SchoolDataExtractor:
         if col_nombres == -1:
             col_nombres = 0
 
-        current_teacher = ""
-        current_rut = ""
-        current_contract = 0.0
+        # CASE 1: Flat / Standard spreadsheet (explicit activity column)
+        if col_actividad != -1 and (col_horas_simple != -1 or col_contrato != -1 or col_total_hc != -1):
+            current_teacher = ""
+            current_rut = ""
+            current_contract = 0.0
 
-        for r in range(data_start_idx, len(df)):
-            nombre_raw = clean_str(df.iat[r, col_nombres]) if col_nombres != -1 and col_nombres < df.shape[1] else ""
-            run_raw = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
-            act_raw = clean_str(df.iat[r, col_actividad]) if col_actividad != -1 and col_actividad < df.shape[1] else ""
+            for r in range(data_start_idx, len(df)):
+                nombre_raw = clean_str(df.iat[r, col_nombres]) if col_nombres != -1 and col_nombres < df.shape[1] else ""
+                run_raw = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+                act_raw = clean_str(df.iat[r, col_actividad]) if col_actividad != -1 and col_actividad < df.shape[1] else ""
 
-            # Check for grand summary / total rows
-            row_str_lower = " ".join([clean_str(df.iat[r, c]).lower() for c in range(min(5, df.shape[1]))])
-            if any(row_str_lower.startswith(k) for k in ["total general", "resumen general", "subtotal general", "promedio general"]):
-                continue
+                row_str_lower = " ".join([clean_str(df.iat[r, c]).lower() for c in range(min(5, df.shape[1]))])
+                if any(row_str_lower.startswith(k) for k in ["total general", "resumen general", "subtotal general", "promedio general"]):
+                    continue
 
-            # Inverted column correction: if name column contains RUN and RUN column contains name
-            if is_rut(nombre_raw) and not is_rut(run_raw) and looks_like_teacher_name(run_raw):
-                nombre_raw, run_raw = run_raw, nombre_raw
+                if is_rut(nombre_raw) and not is_rut(run_raw):
+                    nombre_raw, run_raw = run_raw, nombre_raw
 
-            contrato_num = parse_hours_cell(df.iat[r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
-            h_simple = parse_hours_cell(df.iat[r, col_horas_simple]) if col_horas_simple != -1 and col_horas_simple < df.shape[1] else 0.0
-            
-            # SLEP breakdown columns
-            h_gral = parse_hours_cell(df.iat[r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
-            h_sep = parse_hours_cell(df.iat[r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
-            h_pie = parse_hours_cell(df.iat[r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
-            tot_hc = parse_hours_cell(df.iat[r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
-            tot_ha = parse_hours_cell(df.iat[r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
+                contrato_num = parse_hours_cell(df.iat[r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
+                h_simple = parse_hours_cell(df.iat[r, col_horas_simple]) if col_horas_simple != -1 and col_horas_simple < df.shape[1] else 0.0
+                tot_hc = parse_hours_cell(df.iat[r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
 
-            sub_hours = h_gral + h_sep + h_pie
-            if sub_hours == 0.0 and tot_hc > 0.0:
-                sub_hours = tot_hc
-            if sub_hours == 0.0 and tot_ha > 0.0:
-                sub_hours = tot_ha * 45.0 / 60.0
-
-            has_new_run = is_rut(run_raw)
-            has_teacher_name = looks_like_teacher_name(nombre_raw)
-
-            # Update teacher context when a new teacher is detected
-            if has_new_run or (has_teacher_name and nombre_raw != current_teacher):
-                if has_teacher_name:
+                if nombre_raw and not nombre_raw.lower().startswith(("total", "subtotal", "promedio")):
                     current_teacher = nombre_raw
-                elif not current_teacher and nombre_raw:
-                    current_teacher = nombre_raw
-                if run_raw:
-                    current_rut = run_raw
+                if run_raw and is_rut(run_raw):
+                    current_rut = run_raw.replace(",", ".").replace(" ", "")
                 if contrato_num > 0:
                     current_contract = contrato_num
-                elif tot_hc > 0 and col_contrato == -1:
+                elif tot_hc > 0:
                     current_contract = tot_hc
 
-            # Priority 1: Separate activity column (Flat format or Hierarchical with merged teacher cells)
-            if act_raw and (h_simple > 0 or sub_hours > 0 or contrato_num > 0):
-                act_hours = h_simple if h_simple > 0 else (sub_hours if sub_hours > 0 else contrato_num)
-                self.teachers_data.append({
-                    "teacher_name": current_teacher or nombre_raw,
-                    "rut": current_rut or run_raw,
-                    "activity": act_raw,
-                    "hours": round(act_hours, 2),
-                    "total_declared": current_contract or act_hours
-                })
-                continue
-
-            # Priority 2: SLEP Hierarchical format (Activity is in col_nombres, hours in sub_hours)
-            if current_teacher and nombre_raw and not has_new_run and sub_hours > 0:
-                if not nombre_raw.lower().startswith(("total", "subtotal", "promedio")):
+                act_h = h_simple if h_simple > 0 else (tot_hc if tot_hc > 0 else contrato_num)
+                if act_raw and act_h > 0 and current_teacher:
                     self.teachers_data.append({
                         "teacher_name": current_teacher,
                         "rut": current_rut,
-                        "activity": nombre_raw,
-                        "hours": round(sub_hours, 2),
-                        "total_declared": current_contract or sub_hours
+                        "activity": act_raw,
+                        "hours": round(act_h, 2),
+                        "total_declared": current_contract or act_h
                     })
-                    continue
+            return
 
-            # Priority 3: Flat format with no separate activity column (activity defaults to "Docencia de Aula")
-            if (current_teacher or nombre_raw) and (h_simple > 0 or contrato_num > 0) and not act_raw and not sub_hours:
-                act_hours = h_simple if h_simple > 0 else contrato_num
-                self.teachers_data.append({
-                    "teacher_name": current_teacher or nombre_raw,
-                    "rut": current_rut or run_raw,
-                    "activity": "Docencia de Aula",
-                    "hours": round(act_hours, 2),
-                    "total_declared": current_contract or act_hours
-                })
+        # CASE 2: SLEP Hierarchical spreadsheet (activities in sub-rows under col_nombres)
+        r = data_start_idx
+        current_section = ""
+
+        while r < len(df):
+            c1 = clean_str(df.iat[r, col_nombres])
+            c2 = clean_str(df.iat[r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+
+            # Check section headers
+            if not c2 and c1 and any(k in c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "ASISTENTES", "SIMBOLOGÍA", "RESUMEN"]):
+                current_section = c1.upper()
+                r += 1
                 continue
+
+            has_run = is_rut(c2) if col_run != -1 else False
+            contrato_num = parse_hours_cell(df.iat[r, col_contrato]) if col_contrato != -1 and col_contrato < df.shape[1] else 0.0
+
+            if not has_run and (col_run != -1 or not c1 or c1.lower().startswith(("total", "subtotal", "promedio", "resumen", "slep"))):
+                r += 1
+                continue
+
+            teacher_name_full = c1
+            teacher_name, role_in_name = extract_role_from_name(teacher_name_full)
+            teacher_rut = c2.replace(",", ".").replace(" ", "") if c2 else ""
+
+            # Look ahead for sub-rows (activities)
+            sub_rows = []
+            sub_r = r + 1
+            while sub_r < len(df):
+                sub_c1 = clean_str(df.iat[sub_r, col_nombres])
+                sub_c2 = clean_str(df.iat[sub_r, col_run]) if col_run != -1 and col_run < df.shape[1] else ""
+
+                if col_run != -1 and is_rut(sub_c2):
+                    break
+                if not sub_c2 and sub_c1 and any(k in sub_c1.upper() for k in ["PIE", "CO DOCENTES", "EQUIPO GESTIÓN", "SIMBOLOGÍA", "RESUMEN"]):
+                    break
+                if sub_c1.lower().startswith(("total", "subtotal")):
+                    sub_r += 1
+                    break
+
+                if sub_c1:
+                    h_gral = parse_hours_cell(df.iat[sub_r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
+                    h_sep = parse_hours_cell(df.iat[sub_r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
+                    h_pie = parse_hours_cell(df.iat[sub_r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
+                    tot_hc = parse_hours_cell(df.iat[sub_r, col_total_hc]) if col_total_hc != -1 and col_total_hc < df.shape[1] else 0.0
+                    tot_ha = parse_hours_cell(df.iat[sub_r, col_total_ha]) if col_total_ha != -1 and col_total_ha < df.shape[1] else 0.0
+
+                    h = h_gral + h_sep + h_pie
+                    if h == 0.0 and tot_hc > 0.0:
+                        h = tot_hc
+                    if h == 0.0 and tot_ha > 0.0:
+                        h = tot_ha * 45.0 / 60.0
+
+                    if h > 0:
+                        sub_rows.append((sub_c1, round(h, 2)))
+
+                sub_r += 1
+
+            if sub_rows:
+                for act_name, act_h in sub_rows:
+                    self.teachers_data.append({
+                        "teacher_name": teacher_name,
+                        "rut": teacher_rut,
+                        "activity": act_name,
+                        "hours": act_h,
+                        "total_declared": contrato_num or act_h
+                    })
+            else:
+                act_name = role_in_name
+                if not act_name:
+                    if "PIE" in current_section or (col_sub_pie != -1 and col_sub_pie < df.shape[1] and parse_hours_cell(df.iat[r, col_sub_pie]) > 0):
+                        act_name = "Docente PIE"
+                    elif "CO DOCENTE" in current_section:
+                        act_name = "Co-docente"
+                    else:
+                        act_name = "Docencia de Aula"
+
+                h_row = contrato_num
+                if h_row == 0.0:
+                    h_gral = parse_hours_cell(df.iat[r, col_sub_gral]) if col_sub_gral != -1 and col_sub_gral < df.shape[1] else 0.0
+                    h_sep = parse_hours_cell(df.iat[r, col_sub_sep]) if col_sub_sep != -1 and col_sub_sep < df.shape[1] else 0.0
+                    h_pie = parse_hours_cell(df.iat[r, col_sub_pie]) if col_sub_pie != -1 and col_sub_pie < df.shape[1] else 0.0
+                    h_row = h_gral + h_sep + h_pie
+                    if h_row == 0.0 and col_total_hc != -1 and col_total_hc < df.shape[1]:
+                        h_row = parse_hours_cell(df.iat[r, col_total_hc])
+
+                if h_row > 0:
+                    self.teachers_data.append({
+                        "teacher_name": teacher_name,
+                        "rut": teacher_rut,
+                        "activity": act_name,
+                        "hours": round(h_row, 2),
+                        "total_declared": contrato_num or h_row
+                    })
+
+            r = sub_r
 
 def parse_excel_file(file_input: Union[str, bytes, io.BytesIO], filename: str) -> Dict[str, Any]:
     extractor = SchoolDataExtractor(file_input, filename)
