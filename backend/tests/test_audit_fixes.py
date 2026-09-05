@@ -6,7 +6,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.classifier import classify_local
 from app.exporter import generate_consolidated_excel
-from app.excel_parser import parse_excel_file
 import io
 import openpyxl
 
@@ -22,6 +21,64 @@ class TestAuditFixes(unittest.TestCase):
         self.assertEqual(res2[0], "TECNICA")
 
         res3 = classify_local("encargada cra")
+        self.assertIsNotNone(res3)
+        self.assertEqual(res3[0], "TECNICA")
+
+    def test_orientacion_rules(self):
+        # Plain "Orientación" must be AULA (classroom curriculum hour)
+        res1 = classify_local("Orientación")
+        self.assertIsNotNone(res1)
+        self.assertEqual(res1[0], "AULA")
+
+        res2 = classify_local("Orientación Vocacional")
+        self.assertIsNotNone(res2)
+        self.assertEqual(res2[0], "AULA")
+
+        res3 = classify_local("Consejo de Curso y Orientación")
+        self.assertIsNotNone(res3)
+        self.assertEqual(res3[0], "AULA")
+
+        # "Orientador(a)" / "Encargada de Orientación" must be TECNICA (management/support role)
+        res4 = classify_local("Orientador")
+        self.assertIsNotNone(res4)
+        self.assertEqual(res4[0], "TECNICA")
+
+        res5 = classify_local("Orientadora Institucional")
+        self.assertIsNotNone(res5)
+        self.assertEqual(res5[0], "TECNICA")
+
+        res6 = classify_local("Encargada de Orientación")
+        self.assertIsNotNone(res6)
+        self.assertEqual(res6[0], "TECNICA")
+
+    def test_parvularia_axes(self):
+        # Ejes de Educación Parvularia must be AULA
+        for eje in [
+            "Identidad y Autonomía",
+            "Convivencia y Ciudadanía",
+            "Corporalidad y Movimiento",
+            "Lenguaje Verbal",
+            "Lenguajes Artísticos",
+            "Pensamiento Matemático",
+            "Exploración del Entorno Natural",
+            "Comprensión del Entorno Sociocultural",
+            "Plan de Estudio Educación Parvularia"
+        ]:
+            res = classify_local(eje)
+            self.assertIsNotNone(res, f"Failed for {eje}")
+            self.assertEqual(res[0], "AULA", f"Failed for {eje}")
+
+    def test_combined_roles(self):
+        # Combined management roles
+        res1 = classify_local("Apoyo UTP + PME")
+        self.assertIsNotNone(res1)
+        self.assertEqual(res1[0], "TECNICA")
+
+        res2 = classify_local("Coordinación PAE")
+        self.assertIsNotNone(res2)
+        self.assertEqual(res2[0], "TECNICA")
+
+        res3 = classify_local("Coord PAE")
         self.assertIsNotNone(res3)
         self.assertEqual(res3[0], "TECNICA")
 

@@ -1,48 +1,39 @@
-export const DEFAULT_GEMINI_PROMPT = `Eres un analista experto en dotación docente del sistema educacional público chileno (SLEP - Servicios Locales de Educación Pública).
-Debes analizar detalladamente la estructura de las planillas que varía de una a otra pero todas buscan establecer lo mismo. Las columnas de la "c" a la "i" contienen los datos contractuales de los docentes mientras que en las columnas TOTAL HA* (horas Aula de 45 minutos), TOTAL HC** Sub. Gral (horas aula transformadas a cronológicas), TOTAL HC** Sub. SEP (horas cronológicas SEP), TOTAL HC** Sub. PIE (horas cronológicas PIE) y TOTAL HC. Considera que hay algunas celdas con el formato h:mm, [h]:mm y similares, que pueden afectar el cálculo pero cuentan como "horas cerradas".
+export const DEFAULT_GEMINI_PROMPT = `Eres un clasificador experto en dotación docente del sistema educacional público chileno (SLEP).
 
-Debes clasificar cada una de las siguientes funciones, asignaturas o cargos escolares en exactamente UNA de estas 3 categorías oficiales:
+Tu única tarea es clasificar cada actividad, función, asignatura o cargo escolar recibido en EXACTAMENTE una de estas 3 categorías: "AULA", "TECNICA" o "DIRECTIVA".
 
-1. "AULA" (Frente a estudiantes / Atención pedagógica directa):
-   - Lenguaje, Matemática, Inglés, Historia, Ciencias Naturales, Biología, Física, Química, Artes, Música, Tecnología, Educación Física, Religión, Filosofía.
-   - Formación Ciudadana, Educación Ciudadana, Ciencias para la Ciudadanía.
-   - Orientación cuando se imparte a estudiantes.
-   - Talleres JEC, Talleres SEP, Talleres Extraescolares, AELE, Extensión Horaria.
-   - Aula Común, Aula de Recursos, Atención PIE en aula, Codocencia, Monitoreo de cursos.
-   - Profesor jefe con horas frente a estudiantes.
-   - Regla de Oro: Toda actividad donde exista atención pedagógica directa de estudiantes debe clasificarse como AULA.
+ORDEN DE PRIORIDAD (si una actividad calza con más de una categoría, resuelve en este orden):
+1° DIRECTIVA (la más restrictiva) → 2° TECNICA → 3° AULA (categoría por defecto para todo lo pedagógico).
 
-2. "TECNICA" (Gestión pedagógica no docente y apoyos):
-   - Coordinación PIE, Trabajo Colaborativo PIE, Encargado(a) CRA, Coordinación CRA, Enlaces, Coordinación Enlaces/TIC.
-   - Apoyo UTP, Apoyo Técnico, Orientador(a), Orientación institucional, Jefe UTP, Jefa UTP, Dirección, Equipo Directivo, Rector, Rectora.
-   - Coordinación de ciclo, coordinación de departamento, coordinación matemática, coordinación lenguaje, coordinación convivencia escolar, coordinación extraescolar, coordinación medio ambiente, coordinación EPJA.
-   - Encargado(a) SEP, Encargado(a) PIAE, Curriculista, Sala de Recursos.
-   - Apoyo Técnico Administrativo, Encargado de informática, Planificación, Horas no lectivas, Comunidades CAP.
-   - Recreos, Recreos 60/40, Recreos 65/35, Horas no lectivas 60/40, Horas no lectivas 65/35, Funciones no lectivas art 69.
-   - Regla de Oro: Toda actividad fuera del aula y que no sea directiva debe ser considerada técnica.
+1. "AULA" — Atención pedagógica directa a estudiantes:
+   - Asignaturas: Lenguaje, Matemática, Inglés, Historia, Ciencias Naturales, Biología, Física, Química, Artes, Música, Tecnología, Educación Física, Religión, Filosofía, Formación/Educación Ciudadana.
+   - Ejes de Educación Parvularia (Bases Curriculares): Identidad y Autonomía, Convivencia y Ciudadanía, Corporalidad y Movimiento, Lenguaje Verbal, Lenguajes Artísticos, Pensamiento Matemático, Exploración del Entorno Natural, Comprensión del Entorno Sociocultural, Plan de Estudio Educación Parvularia.
+   - Talleres JEC/SEP/Extraescolares, AELE, Extensión Horaria, Aula Común, Aula de Recursos, Codocencia.
+   - Atención directa a estudiantes con NEE (Aula de Recursos NEET/NEEP, Atención PIE en aula), atención de párvulos frente a niños (recreos/almuerzo incluido, si implica cuidado directo de estudiantes).
+   - Profesor jefe con horas frente a curso.
+   - REGLA "ORIENTACIÓN": si el texto es solo "Orientación" (sin más calificación), clasifica AULA — es la hora de consejo de curso frente a estudiantes. Solo clasifica TECNICA si el texto dice explícitamente "Orientador(a) Institucional", "Encargado(a) de Orientación" o equivalente (rol de gestión, no hora frente a curso).
 
-3. "DIRECTIVA" (Liderazgo y dirección institucional):
-   - Director, Directora, Encargado de Escuela, Inspector General, Inspectora General, Subdirector, Subdirectora.
-   - Regla de Oro: Solo director, subdirector e inspector general constituyen horas Directivas.
+2. "TECNICA" — Gestión pedagógica no frente a curso y apoyos:
+   - Coordinación PIE, Trabajo Colaborativo (PIE o no), Encargado(a)/Coordinación CRA, Enlaces/TIC.
+   - Apoyo UTP, Jefe(a) UTP, Apoyo Técnico(-Administrativo), Dirección, Equipo Directivo, Rector(a).
+   - Cualquier "Coordinación de/coordinación X" (ciclo, departamento, convivencia escolar, extraescolar, medio ambiente, EPJA, PAE, Formación Integral).
+   - Encargado(a) SEP/PIAE/informática, Curriculista, Planificación, Comunidades CAP.
+   - Recreos (60/40, 65/35), Horas no lectivas (60/40, 65/35), Funciones no lectivas Art. 69.
+   - Roles combinados con "+" o "/" (ej. "Apoyo UTP + PME") → TECNICA, salvo que el rol dominante sea explícitamente de aula.
 
-Tratamiento de texto e IA:
-- Analizar el texto de cada actividad
-- Interpretar variantes ortográficas, errores de escritura y sinónimos
-- Reconocer abreviaturas del sistema escolar chileno (ej: "coord pie", "coord. PIE", "coordinación pie", "coordinadora PIE" -> todas deben clasificarse como TECNICA)
+3. "DIRECTIVA" — Liderazgo institucional:
+   - Únicamente: Director(a), Subdirector(a), Inspector(a) General, Encargado(a) de Escuela.
+   - Ningún otro cargo (ni "Equipo Directivo", ni "Jefe UTP") entra aquí.
+
+Interpretación de texto:
+- Corrige mentalmente errores ortográficos, variantes regionales y abreviaturas ("coord pie", "coord. PIE" → TECNICA).
+- Si el texto combina un nombre de persona con un cargo entre paréntesis, clasifica solo por el cargo.
+- Si de verdad no puedes determinar la categoría tras aplicar las reglas anteriores, usa tu mejor estimación — NUNCA omitas una clave ni dejes un valor fuera de {AULA, TECNICA, DIRECTIVA}.
 
 Actividades a clasificar:
 {activities_json}
 
-Instrucciones de formato de respuesta:
-Responde ÚNICAMENTE con un objeto JSON válido donde cada clave sea el texto exacto recibido y el valor sea exclusivamente "AULA", "TECNICA" o "DIRECTIVA".
-Ejemplo de formato:
-{
-  "Taller Robótica Escolar": "AULA",
-  "coord. PIE": "TECNICA",
-  "Inspector General": "DIRECTIVA",
-  "Jefe UTP": "TECNICA",
-  "Recreos 65/35": "TECNICA"
-}
+Responde ÚNICAMENTE un objeto JSON plano, sin texto adicional ni bloques de código, con cada clave siendo el texto exacto recibido y el valor exclusivamente "AULA", "TECNICA" o "DIRECTIVA".
 `;
 
 export function normalizeText(text: string): string {
@@ -57,7 +48,7 @@ export function normalizeText(text: string): string {
 
 // Diccionario exhaustivo local de términos educacionales chilenos
 const LOCAL_DICT: Record<string, string> = {
-  // AULA
+  // AULA (Asignaturas y Atención Pedagógica Directa)
   'lenguaje': 'AULA',
   'matematica': 'AULA',
   'matematicas': 'AULA',
@@ -79,6 +70,10 @@ const LOCAL_DICT: Record<string, string> = {
   'formacion ciudadana': 'AULA',
   'educacion ciudadana': 'AULA',
   'ciencias para la ciudadania': 'AULA',
+  'orientacion': 'AULA',
+  'orientacion vocacional': 'AULA',
+  'consejo de curso': 'AULA',
+  'consejo de curso y orientacion': 'AULA',
   'docencia de aula': 'AULA',
   'taller jec': 'AULA',
   'taller sep': 'AULA',
@@ -92,6 +87,18 @@ const LOCAL_DICT: Record<string, string> = {
   'profesor de aula': 'AULA',
   'profesor jefe': 'AULA',
 
+  // Ejes Educación Parvularia (Bases Curriculares)
+  'identidad y autonomia': 'AULA',
+  'convivencia y ciudadania': 'AULA',
+  'corporalidad y movimiento': 'AULA',
+  'lenguaje verbal': 'AULA',
+  'lenguajes artisticos': 'AULA',
+  'pensamiento matematico': 'AULA',
+  'exploracion del entorno natural': 'AULA',
+  'comprension del entorno sociocultural': 'AULA',
+  'plan de estudio educacion parvularia': 'AULA',
+  'educacion parvularia': 'AULA',
+
   // DIRECTIVA (REGLA ESTRICTA)
   'director': 'DIRECTIVA',
   'directora': 'DIRECTIVA',
@@ -102,7 +109,7 @@ const LOCAL_DICT: Record<string, string> = {
   'encargado de escuela': 'DIRECTIVA',
   'encargada de escuela': 'DIRECTIVA',
 
-  // TECNICA
+  // TECNICA (Gestión no frente a curso, apoyos y roles no lectivos)
   'jefe utp': 'TECNICA',
   'jefa utp': 'TECNICA',
   'direccion': 'TECNICA',
@@ -122,9 +129,18 @@ const LOCAL_DICT: Record<string, string> = {
   'enlaces': 'TECNICA',
   'coordinador enlaces': 'TECNICA',
   'apoyo utp': 'TECNICA',
+  'apoyo utp + pme': 'TECNICA',
+  'apoyo utp pme': 'TECNICA',
+  'coordinacion pae': 'TECNICA',
+  'coord pae': 'TECNICA',
+  'coordinador pae': 'TECNICA',
+  'coordinadora pae': 'TECNICA',
+  'coordinacion formacion integral': 'TECNICA',
   'orientador': 'TECNICA',
   'orientadora': 'TECNICA',
-  'orientacion': 'TECNICA',
+  'orientacion institucional': 'TECNICA',
+  'encargado de orientacion': 'TECNICA',
+  'encargada de orientacion': 'TECNICA',
   'recreo': 'TECNICA',
   'recreos': 'TECNICA',
   'recreo 60/40': 'TECNICA',
@@ -187,6 +203,7 @@ export function classifyLocal(text: string): { category: string; source: string;
     norm.includes('coordinac') ||
     norm.includes('encargad') ||
     norm.includes('orientad') ||
+    norm.includes('orientacion institucional') ||
     norm.includes('curricul') ||
     norm.includes('convivencia') ||
     norm.includes('rector') ||
@@ -195,7 +212,9 @@ export function classifyLocal(text: string): { category: string; source: string;
     norm.includes('depto') ||
     norm.includes('departamento') ||
     norm.includes('evaluac') ||
-    norm.includes('planificac')
+    norm.includes('planificac') ||
+    norm.includes('pae') ||
+    norm.includes('pme')
   ) {
     return { category: 'TECNICA', source: 'Regla Local (Patrón Técnico)', confidence: 0.95 };
   }
@@ -216,9 +235,16 @@ export function classifyLocal(text: string): { category: string; source: string;
     norm.includes('religion') ||
     norm.includes('filosof') ||
     norm.includes('ciudadan') ||
+    norm.includes('orientac') ||
+    norm.includes('consejo de curso') ||
     norm.includes('taller') ||
     norm.includes('aula') ||
-    norm.includes('pie')
+    norm.includes('pie') ||
+    norm.includes('identidad') ||
+    norm.includes('autonomia') ||
+    norm.includes('corporalidad') ||
+    norm.includes('movimiento') ||
+    norm.includes('parvul')
   ) {
     return { category: 'AULA', source: 'Regla Local (Patrón Asignatura)', confidence: 0.95 };
   }
