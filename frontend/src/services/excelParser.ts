@@ -108,15 +108,41 @@ export function parseHoursCell(val: any): number {
   // Fechas reales como "01/03/2024" o "2024-03-01" -> no son horas
   if (/^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(s)) return 0.0;
 
-  // Formato H:MM o [H]:MM o H:MM:SS (ej. 1:34, 6:26, 12:00, [40]:00)
-  const timeMatch = s.match(/\[?(\d+)\]?:(\d{1,2})(?::(\d{1,2}))?/);
+  // Formato "X day(s), HH:MM:SS" (ej. "1 day, 20:00:00" = 44 horas en Excel)
+  const dayTimeMatch = s.match(/(\d+)\s*days?,\s*(\d+):(\d{1,2})(?::(\d{1,2}))?/i);
+  if (dayTimeMatch) {
+    const days = parseInt(dayTimeMatch[1], 10);
+    const h = parseInt(dayTimeMatch[2], 10);
+    const m = parseInt(dayTimeMatch[3] || '0', 10);
+    const sec = parseInt(dayTimeMatch[4] || '0', 10);
+    const totalH = days * 24.0 + h + m / 60.0 + sec / 3600.0;
+    if (totalH > 0 && totalH <= 60) {
+      return Math.round(totalH * 100) / 100;
+    }
+  }
+
+  // Formato H:MM o [H]:MM o H:MM:SS con posible AM/PM (ej. 1:34, 6:26, 12:00, [40]:00, 12:45:00 AM, 12:00:00 AM)
+  const timeMatch = s.match(/\[?(\d+)\]?:(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?/i);
   if (timeMatch) {
-    const h = parseInt(timeMatch[1], 10);
+    let h = parseInt(timeMatch[1], 10);
     const m = parseInt(timeMatch[2] || '0', 10);
     const sec = parseInt(timeMatch[3] || '0', 10);
+    const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
+
+    if (ampm) {
+      if (ampm === 'AM') {
+        if (h === 12) h = 0;
+      } else if (ampm === 'PM') {
+        if (h < 12) h += 12;
+      }
+    }
+
     const totalH = h + m / 60.0 + sec / 3600.0;
     if (totalH > 0 && totalH <= 50) {
       return Math.round(totalH * 100) / 100;
+    }
+    if (totalH === 0) {
+      return 0.0;
     }
   }
 
@@ -575,7 +601,7 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
       totH = decl;
     }
 
-    const isOver44 = (totH > 44.0 || decl > 44.0);
+    const isOver44 = (totH > 44.05 || decl > 44.05);
     let warn = '';
     if (isOver44) {
       const maxVal = Math.max(totH, decl);

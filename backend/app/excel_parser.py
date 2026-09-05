@@ -173,15 +173,38 @@ def parse_hours_cell(val: Any) -> float:
     if re.search(r"^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$|^\d{4}[/-]\d{1,2}[/-]\d{1,2}$", val_str):
         return 0.0
 
-    # Check time format with colon (e.g. "12:00", "01:34", "[44]:00", "44:00")
-    time_match = re.search(r"\[?(\d+)\]?:(\d{1,2})(?::(\d{1,2}))?", val_str)
+    # Check "X day(s), HH:MM:SS" (e.g. "1 day, 20:00:00" = 44 hours in Excel)
+    day_match = re.search(r"(\d+)\s*days?,\s*(\d+):(\d{1,2})(?::(\d{1,2}))?", val_str, re.IGNORECASE)
+    if day_match:
+        days = float(day_match.group(1))
+        h = float(day_match.group(2))
+        m = float(day_match.group(3)) if day_match.group(3) else 0.0
+        s = float(day_match.group(4)) if day_match.group(4) else 0.0
+        total_h = days * 24.0 + h + m / 60.0 + s / 3600.0
+        if 0 < total_h <= 60:
+            return round(total_h, 2)
+
+    # Check time format with colon and optional AM/PM (e.g. "12:00", "01:34", "[44]:00", "12:45:00 AM")
+    time_match = re.search(r"\[?(\d+)\]?:(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?", val_str, re.IGNORECASE)
     if time_match:
         h = float(time_match.group(1))
         m = float(time_match.group(2)) if time_match.group(2) else 0.0
         s = float(time_match.group(3)) if time_match.group(3) else 0.0
+        ampm = time_match.group(4).upper() if time_match.group(4) else None
+
+        if ampm:
+            if ampm == "AM":
+                if h == 12:
+                    h = 0.0
+            elif ampm == "PM":
+                if h < 12:
+                    h += 12.0
+
         total_h = h + m / 60.0 + s / 3600.0
         if 0 < total_h <= 50:
             return round(total_h, 2)
+        if total_h == 0:
+            return 0.0
 
     # Check Nh Mm format (e.g. "19h 30 m", "19h 30m", "19 h 30 min", "0h 45m", "19 hrs 30 min")
     hm_match = re.search(r"(\d+)\s*h(?:rs?|oras?)?\s*(\d+)\s*m(?:in(?:utos?)?)?", val_str, re.IGNORECASE)
@@ -632,7 +655,7 @@ class SchoolDataExtractor:
                 t_data["activities"].append({"name": "Docencia de Aula", "hours": decl})
                 tot_h = decl
 
-            is_over_44 = (round(tot_h, 2) > 44.0 or round(decl, 2) > 44.0)
+            is_over_44 = (round(tot_h, 2) > 44.05 or round(decl, 2) > 44.05)
             warn = ""
             if is_over_44:
                 max_val = max(tot_h, decl)
