@@ -195,12 +195,39 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
     raw: false,
   });
 
+  const detailKeywords = ['detalle', 'nomina', 'nómina', 'planta', 'distribucion', 'distribución'];
+  const generalKeywords = ['dotaci', 'planilla', 'horas', 'docente'];
+  const excludeKeywords = ['resumen', 'consolidado', 'grafic', 'portada', 'totales'];
+
   let sheetName = workbook.SheetNames[0];
+  let foundDetail = false;
   for (const name of workbook.SheetNames) {
     const lower = name.toLowerCase();
-    if (lower.includes('dotaci') || lower.includes('planilla') || lower.includes('horas') || lower.includes('docente')) {
+    if (detailKeywords.some((k) => lower.includes(k))) {
       sheetName = name;
+      foundDetail = true;
       break;
+    }
+  }
+
+  if (!foundDetail) {
+    let foundGeneral = false;
+    for (const name of workbook.SheetNames) {
+      const lower = name.toLowerCase();
+      if (generalKeywords.some((k) => lower.includes(k)) && !excludeKeywords.some((ex) => lower.includes(ex))) {
+        sheetName = name;
+        foundGeneral = true;
+        break;
+      }
+    }
+    if (!foundGeneral) {
+      for (const name of workbook.SheetNames) {
+        const lower = name.toLowerCase();
+        if (generalKeywords.some((k) => lower.includes(k))) {
+          sheetName = name;
+          break;
+        }
+      }
     }
   }
 
@@ -369,8 +396,12 @@ export async function parseExcelBrowser(file: File): Promise<ParsedSchoolData> {
     seenCount: number;
   }>();
 
-  // CASE 1: Flat / Standard spreadsheet (explicit activity column)
-  if (colActividad !== -1 && (colHorasSimple !== -1 || colContrato !== -1 || colTotalHc !== -1)) {
+  // Check if spreadsheet has hierarchical subvention columns
+  const hasSubventionColumns = (colSubGral !== -1 || colSubSep !== -1 || colSubPie !== -1 || colTotalHa !== -1);
+  const isFlatStructure = (colActividad !== -1 && !hasSubventionColumns) && (colHorasSimple !== -1 || colContrato !== -1 || colTotalHc !== -1);
+
+  // CASE 1: Flat / Standard spreadsheet (explicit activity column and no subvention breakdown columns)
+  if (isFlatStructure) {
     let currentTeacher = '';
     let currentRut = '';
     let currentContract = 0.0;

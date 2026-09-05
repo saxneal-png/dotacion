@@ -1,4 +1,4 @@
-﻿import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { SchoolSummary, TeacherRecord } from '../types';
 
@@ -7,7 +7,7 @@ export function exportConsolidatedExcelBrowser(schools: SchoolSummary[], teacher
 
   // 1. Hoja Consolidado
   const consolidatedHeaders = [
-    ['SERVICIO LOCAL DE EDUCACIÓN PÚBLICA (SLEP) - DOTACIÓN UYUY!! 🤠'],
+    ['SERVICIO LOCAL DE EDUCACIÓN PÚBLICA (SLEP) - DOTACIÓN DOCENTE'],
     ['CONSOLIDADO DE HORAS DOCENTES: AULA, TÉCNICAS Y DIRECTIVAS'],
     [''],
     [
@@ -115,7 +115,7 @@ export function exportCsvBrowser(schools: SchoolSummary[]) {
   const headers = ['RBD', 'ESTABLECIMIENTO', 'MATRICULA', 'HORAS_AULA', 'HORAS_DIRECTIVAS', 'HORAS_TECNICAS', 'TOTAL_HORAS_EE'];
   const rows = schools.map((s) => [
     s.rbd,
-    "",
+    s.establishment,
     s.matricula,
     s.horas_aula,
     s.horas_directivas,

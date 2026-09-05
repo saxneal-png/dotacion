@@ -62,7 +62,11 @@ class SetModelRequest(BaseModel):
     model: str
 
 class ReclassifyRequest(BaseModel):
-    teacher_index: int
+    teacher_id: Optional[str] = None
+    rut: Optional[str] = None
+    teacher_name: Optional[str] = None
+    activity: Optional[str] = None
+    teacher_index: Optional[int] = None
     new_category: str
     reason: Optional[str] = "Ajuste manual de usuario"
 
@@ -422,14 +426,35 @@ def get_consolidated():
 
 @app.post("/api/reclassify")
 def reclassify_teacher(req: ReclassifyRequest):
-    if req.teacher_index < 0 or req.teacher_index >= len(current_state["teachers"]):
-        raise HTTPException(status_code=404, detail="Docente no encontrado.")
-    
     new_cat = req.new_category.upper()
     if new_cat not in ["AULA", "TECNICA", "DIRECTIVA"]:
         raise HTTPException(status_code=400, detail="Categoría inválida.")
 
-    teacher = current_state["teachers"][req.teacher_index]
+    target_idx = None
+
+    # 1. Search by teacher_id
+    if req.teacher_id:
+        for idx, t in enumerate(current_state["teachers"]):
+            if t.get("id") == req.teacher_id:
+                target_idx = idx
+                break
+
+    # 2. Search by rut and activity
+    if target_idx is None and req.rut:
+        for idx, t in enumerate(current_state["teachers"]):
+            if t.get("rut") == req.rut and (not req.activity or t.get("activity") == req.activity):
+                target_idx = idx
+                break
+
+    # 3. Fallback by index
+    if target_idx is None and req.teacher_index is not None:
+        if 0 <= req.teacher_index < len(current_state["teachers"]):
+            target_idx = req.teacher_index
+
+    if target_idx is None:
+        raise HTTPException(status_code=404, detail="Docente no encontrado.")
+
+    teacher = current_state["teachers"][target_idx]
     old_cat = teacher["category"]
     hours = teacher["hours"]
     school_rbd = teacher["rbd"]

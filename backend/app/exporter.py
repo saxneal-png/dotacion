@@ -127,23 +127,26 @@ def generate_consolidated_excel(schools: List[Dict[str, Any]], detailed_teachers
     t_label = ws.cell(row=current_row, column=2, value="TOTAL GENERAL SLEP")
     t_label.alignment = Alignment(horizontal="left", vertical="center")
 
-    t_mat = ws.cell(row=current_row, column=3, value=f"=SUM(C5:C{current_row-1})")
+    has_data = len(schools) > 0
+    end_row = current_row - 1 if has_data else current_row
+
+    t_mat = ws.cell(row=current_row, column=3, value=f"=SUM(C5:C{end_row})" if has_data else 0)
     t_mat.number_format = "#,##0"
     t_mat.alignment = Alignment(horizontal="right", vertical="center")
 
-    t_aula = ws.cell(row=current_row, column=4, value=f"=SUM(D5:D{current_row-1})")
+    t_aula = ws.cell(row=current_row, column=4, value=f"=SUM(D5:D{end_row})" if has_data else 0.0)
     t_aula.number_format = "#,##0.0"
     t_aula.alignment = Alignment(horizontal="right", vertical="center")
 
-    t_dir = ws.cell(row=current_row, column=5, value=f"=SUM(E5:E{current_row-1})")
+    t_dir = ws.cell(row=current_row, column=5, value=f"=SUM(E5:E{end_row})" if has_data else 0.0)
     t_dir.number_format = "#,##0.0"
     t_dir.alignment = Alignment(horizontal="right", vertical="center")
 
-    t_tec = ws.cell(row=current_row, column=6, value=f"=SUM(F5:F{current_row-1})")
+    t_tec = ws.cell(row=current_row, column=6, value=f"=SUM(F5:F{end_row})" if has_data else 0.0)
     t_tec.number_format = "#,##0.0"
     t_tec.alignment = Alignment(horizontal="right", vertical="center")
 
-    t_tot = ws.cell(row=current_row, column=7, value=f"=SUM(G5:G{current_row-1})")
+    t_tot = ws.cell(row=current_row, column=7, value=f"=SUM(G5:G{end_row})" if has_data else 0.0)
     t_tot.number_format = "#,##0.0"
     t_tot.alignment = Alignment(horizontal="right", vertical="center")
 

@@ -329,10 +329,15 @@ export function App() {
         } catch {}
 
         try {
+          const targetTeacher = updated[teacherIndex];
           fetch('/api/reclassify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              teacher_id: targetTeacher?.id,
+              rut: targetTeacher?.rut,
+              teacher_name: targetTeacher?.teacher_name,
+              activity: targetTeacher?.activity,
               teacher_index: teacherIndex,
               new_category: newCategory,
               reason: 'Ajuste manual de usuario',

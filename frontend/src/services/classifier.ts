@@ -183,12 +183,19 @@ export function classifyLocal(text: string): { category: string; source: string;
     norm.includes('art 69') ||
     norm.includes('art. 69') ||
     norm.includes('colaborativo') ||
+    norm.includes('coord') ||
     norm.includes('coordinac') ||
+    norm.includes('encargad') ||
     norm.includes('orientad') ||
     norm.includes('curricul') ||
     norm.includes('convivencia') ||
     norm.includes('rector') ||
-    norm.includes('directivo')
+    norm.includes('directivo') ||
+    norm.includes('ciclo') ||
+    norm.includes('depto') ||
+    norm.includes('departamento') ||
+    norm.includes('evaluac') ||
+    norm.includes('planificac')
   ) {
     return { category: 'TECNICA', source: 'Regla Local (Patrón Técnico)', confidence: 0.95 };
   }

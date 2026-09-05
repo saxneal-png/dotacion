@@ -278,11 +278,28 @@ class SchoolDataExtractor:
         elif ext in [".xlsx", ".xls"]:
             try:
                 with pd.ExcelFile(bio) as xls:
+                    detail_keywords = ["detalle", "nomina", "nómina", "planta", "distribucion", "distribución"]
+                    general_keywords = ["dotaci", "planilla", "horas", "docente"]
+                    exclude_keywords = ["resumen", "consolidado", "grafic", "portada", "totales"]
+
                     selected_sheet = xls.sheet_names[0]
                     for name in xls.sheet_names:
-                        if any(k in name.lower() for k in ["dotaci", "planilla", "horas", "docente"]):
+                        n_low = name.lower()
+                        if any(k in n_low for k in detail_keywords):
                             selected_sheet = name
                             break
+                    else:
+                        for name in xls.sheet_names:
+                            n_low = name.lower()
+                            if any(k in n_low for k in general_keywords) and not any(ex in n_low for ex in exclude_keywords):
+                                selected_sheet = name
+                                break
+                        else:
+                            for name in xls.sheet_names:
+                                n_low = name.lower()
+                                if any(k in n_low for k in general_keywords):
+                                    selected_sheet = name
+                                    break
                     df = pd.read_excel(xls, sheet_name=selected_sheet, header=None)
                     self._process_dataframe(df)
             except Exception:
@@ -456,8 +473,12 @@ class SchoolDataExtractor:
 
         teachers_by_key: Dict[str, Dict[str, Any]] = {}
 
-        # CASE 1: Flat / Standard spreadsheet (explicit activity column)
-        if col_actividad != -1 and (col_horas_simple != -1 or col_contrato != -1 or col_total_hc != -1):
+        # Check if spreadsheet has hierarchical subvention columns
+        has_subvention_columns = (col_sub_gral != -1 or col_sub_sep != -1 or col_sub_pie != -1 or col_total_ha != -1)
+        is_flat_structure = (col_actividad != -1 and not has_subvention_columns) and (col_horas_simple != -1 or col_contrato != -1 or col_total_hc != -1)
+
+        # CASE 1: Flat / Standard spreadsheet (explicit activity column and no subvention breakdown columns)
+        if is_flat_structure:
             current_teacher = ""
             current_rut = ""
             current_contract = 0.0
